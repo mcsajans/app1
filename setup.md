@@ -128,3 +128,64 @@ bunx eas-cli update --branch main --message "Yeni güncelleme"
      rm -rf node_modules
      bun install
      ```
+
+---
+
+## 📱 5. iOS Ortamında Çalıştırma Rehberi
+
+iOS cihazlarda veya macOS ortamında projeyi test edip ayağa kaldırmak için izlenebilecek 3 farklı yöntem bulunmaktadır:
+
+### Yöntem A: Fiziksel iPhone / iPad Cihazında Çalıştırma (En Kolay Yöntem)
+
+Fiziksel bir iOS cihazda test yapmak için **Mac bilgisayar zorunluluğu yoktur** (Windows veya Linux bilgisayarla da çalışır):
+
+1. **Gerekli Mobil Uygulama:** iPhone veya iPad cihazınızda **App Store**'u açın ve **[Expo Go](https://apps.apple.com/app/expo-go/id982107779)** uygulamasını indirin.
+2. **Aynı Ağ Bağlantısı:** Bilgisayarınız ile iPhone cihazınızın **aynı Wi-Fi ağına** bağlı olduğundan emin olun.
+3. **Sunucuyu Başlatma:** Bilgisayar terminalinde geliştirme sunucusunu çalıştırın:
+   ```bash
+   bunx expo start
+   ```
+4. **Uygulamayı Açma:**
+   - iPhone **Kamera** uygulamasını açın ve terminaldeki **QR Kodunu** taratın.
+   - Ekranda beliren "Expo Go uygulamasında aç" bildirimine dokunun.
+5. **Wi-Fi veya Ağ Bağlantı Sorunları İçin Tünel Modu (Tunnel):**
+   Fiziksel cihaz ve bilgisayar aynı Wi-Fi ağında değilse veya ağ kısıtlaması varsa tünel modu kullanın:
+   ```bash
+   bunx expo start --tunnel
+   ```
+
+---
+
+### Yöntem B: macOS Üzerinde iOS Simulator İle Çalıştırma
+
+iOS Simülatöründe çalıştırmak için **macOS** işletim sistemine sahip bir bilgisayar gereklidir:
+
+1. **Xcode Kurulumu:** App Store üzerinden **Xcode** uygulamasını indirin.
+2. **Command Line Tools:** Terminal açıp şu komut ile komut satırı araçlarını etkinleştirin:
+   ```bash
+   xcode-select --install
+   ```
+3. **Simülatör Bileşenleri:** Xcode'u açıp `Settings > Components` menüsünden bir iOS Simulator sürümü indirin.
+4. **Simülatörü Başlatma:** Terminalde proje sunucusunu başlattıktan sonra klavyeden `i` tuşuna basın:
+   ```bash
+   bunx expo start
+   # Terminal açıkken 'i' tuşuna basın
+   ```
+   *Expo CLI otomatik olarak iOS Simülatörünü başlatacak ve uygulamayı yükleyecektir.*
+
+---
+
+### Yöntem C: EAS Cloud Build İle iOS Derlemesi Almak (.ipa / Development Build)
+
+Projenin yerel native derlemesini (IPA paketini) yerel Mac veya Xcode kullanmadan bulutta derlemek için Expo Application Services (EAS) kullanılır:
+
+1. **Apple Developer Hesabı:** iOS cihazlara doğrudan derleme yüklemek için aktif bir **Apple Developer Account** gereklidir.
+2. **Bulut Derlemesi Komutu:**
+   ```bash
+   # Geliştirme derlemesi (Development Build) almak için:
+   bunx eas-cli build --platform ios --profile development
+
+   # App Store / TestFlight veya Ad-Hoc profil için:
+   bunx eas-cli build --platform ios --profile production
+   ```
+

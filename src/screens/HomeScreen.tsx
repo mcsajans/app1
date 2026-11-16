@@ -18,6 +18,7 @@ import { TASK_TYPE_ICONS, recipeLine, isOverdue } from '../modules/tasks/taskFor
 import { Card, EmptyState, Screen } from '../components/ui';
 import { MODULE_SCREENS } from '../core/navigation/moduleScreens';
 import { openModule } from '../core/navigation/navigationRef';
+import { showAdAfterAction } from '../core/ads/adService';
 
 /**
  * Gösterge üst sınırları — oran çubukları bir referans olmadan çizilemez.

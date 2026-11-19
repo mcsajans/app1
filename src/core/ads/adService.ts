@@ -1,4 +1,7 @@
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
+import {
+  getTrackingPermissionsAsync, PermissionStatus, requestTrackingPermissionsAsync,
+} from 'expo-tracking-transparency';
 import {
   AdEventType, AdsConsent, AdsConsentStatus, InterstitialAd, MaxAdContentRating, MobileAds, TestIds,
 } from 'react-native-google-mobile-ads';
@@ -403,6 +406,36 @@ function canShowNow(trigger: AdTrigger): boolean {
   return true;
 }
 
+/* ──────────────────────── iOS izleme izni (ATT) ──────────────────────────── */
+
+/** Bu oturumda izin zaten soruldu mu; sistem de bir kez sorduktan sonra sormaz. */
+let trackingAsked = false;
+
+/**
+ * iOS'ta izleme iznini (ATT) ilk kez sorar; pencere açıldıysa `true` döner.
+ *
+ * Uygulama açılırken DEĞİL, ilk reklam gösterilecekken sorulur: kullanıcı o
+ * ana kadar uygulamayı kullanıp bir kayıt girmiş olur ve açılışın ilk
+ * saniyesinde çıkan izin penceresi çok daha yüksek oranda reddedilir.
+ * Pencere açıldıysa çağıran o seferlik reklamı atlar; iki tam ekran katman
+ * üst üste binmesin.
+ *
+ * Android'de ve izin zaten verilmiş/reddedilmişse hiçbir şey yapmaz. Hata
+ * fırlatmaz: izin akışı bozulursa reklam kişiselleştirilmeden devam eder.
+ */
+async function askTrackingPermission(): Promise<boolean> {
+  if (Platform.OS !== 'ios' || trackingAsked) return false;
+  trackingAsked = true;
+  try {
+    const current = await getTrackingPermissionsAsync();
+    if (current.status !== PermissionStatus.UNDETERMINED) return false;
+    await requestTrackingPermissionsAsync();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /* ──────────────────────────── dışa açılan uç ─────────────────────────────── */
 
 /**
@@ -440,10 +473,22 @@ export function showAdAfterAction(trigger: AdTrigger = 'save'): void {
       return;
     }
 
-    ad.show().catch(() => {
-      // Gösterim başarısız: örnek tükenmiş olabilir, yenisi yüklenir.
-      reload();
-    });
+    const showIt = () => {
+      ad.show().catch(() => {
+        // Gösterim başarısız: örnek tükenmiş olabilir, yenisi yüklenir.
+        reload();
+      });
+    };
+
+    // Kişiselleştirme isteniyorsa iOS izni önce sorulur; pencere açıldıysa bu
+    // seferlik reklam atlanır, bir sonraki kayıtta gösterilir.
+    if (personalizedFor(config())) {
+      void askTrackingPermission().then((asked) => {
+        if (!asked) showIt();
+      });
+      return;
+    }
+    showIt();
   }, cfg.action_delay_ms);
 }
 

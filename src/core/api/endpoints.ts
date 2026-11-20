@@ -29,6 +29,19 @@ export const endpoints = {
    */
   adsConfig: '/ads/config',
 
+  /**
+   * Yasal onaylar — KVKK aydınlatma beyanı ve açık rıza (sunucu:
+   * `migrations/022`). Tanımlar yönetim panelinden yazılır.
+   *
+   * `list` kimlik doğrulaması İSTEMEZ: kutucuklar kayıt ekranında, yani
+   * hesap daha yokken gösteriliyor.
+   */
+  consents: {
+    list: '/consents',
+    mine: '/consents/me',
+    accept: '/consents/accept',
+  },
+
   auth: {
     register: '/auth/register',
     login: '/auth/login',

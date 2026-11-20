@@ -7,7 +7,7 @@ import Slider from '@react-native-community/slider';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { formatDuration, humanDuration } from '../../components/records';
-import { Button } from '../../components/ui';
+import { Button, ButtonRow } from '../../components/ui';
 import { colors, moduleTint, radius, shadow, spacing, typography } from '../../core/theme';
 
 const DURATION = 200;
@@ -229,12 +229,14 @@ export function ActiveDurationSheet({
           </View>
 
           <View style={s.gap} />
-          <Button
-            label={busy ? 'Kaydediliyor…' : 'Kaydet'}
-            onPress={save}
-            disabled={busy}
-          />
-          <Button label="Vazgeç" variant="ghost" onPress={onCancel} disabled={busy} />
+          <ButtonRow>
+            <Button
+              label={busy ? 'Kaydediliyor…' : 'Kaydet'}
+              onPress={save}
+              disabled={busy}
+            />
+            <Button label="Vazgeç" variant="ghost" onPress={onCancel} disabled={busy} />
+          </ButtonRow>
         </ScrollView>
       </Animated.View>
     </Modal>

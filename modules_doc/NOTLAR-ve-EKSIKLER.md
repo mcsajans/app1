@@ -373,6 +373,17 @@ Ayrıntılar ve istek/yanıt örnekleri `TEKNIK_DOKUMAN.md` içindedir.
 | E-posta servisi (SMTP) | ✅ | §22.14 | — (sunucu tarafı) |
 | Fotoğraf: doğrudan yükleme | ✅ | §22.14 | ✅ (kamera + galeri) |
 | Hatırlatıcı: `event` + esnek tekrar | ✅ | §22.14 | ✅ |
+| 16 — İlaç Takibi | ✅ | §22.16 | ✅ |
+
+**Modül 16 uygulandı** (2026-11-21): iki tablo, 10 uç, saf kural dosyası +
+27 test, mobil ekran/sekmeli doz girişi/kür formu, günlük akış ve sıradaki
+doz uyarıları. İki kritik kararı: uygulama doz **önermez**, erken doz
+**engellenmez** — kabul edilir, `is_early` ile işaretlenir ve yanıt bir
+`warnings` listesi taşır (bu yüzden modülde 409 yok).
+
+Eksik kalanlar `modules_doc/ilac-takibi.md` §10 "Henüz yapılmadı"da:
+bildirim üstü eylemler ("Verildi"), görev→doz bağlantısı, rapor satırları,
+aşı ekranından kısa yol, e2e betiği.
 
 **Bez modülü mobilde hiç yoktu**; modül kataloğuna eklendi.
 **Biberon mobilde yer tutucuydu**; gerçek ekranla değiştirildi.

@@ -1,4 +1,4 @@
-import { showAdAfterAction } from '../ads/adService';
+import { showAdAfterAction, type AdOptions } from '../ads/adService';
 import type { AdTrigger } from '../ads/useAdSettingsStore';
 import { useSaveFeedbackStore } from './useSaveFeedbackStore';
 
@@ -39,11 +39,22 @@ import { useSaveFeedbackStore } from './useSaveFeedbackStore';
  * (TEKNIK_DOKUMAN.md §7.6). Varsayılan `'save'`; aşı "yapıldı" akışı
  * `'complete'`, davet oluşturma `'invite'` geçiyor — yoksa panelin o iki
  * anahtarı hiçbir zaman işe yaramazdı.
+ *
+ * `adOptions` modüle özgü sapmaları geçirir (gecikme, sessizlik): uyku
+ * modülü 3 saniye ve **sesi kapalı** reklam istiyor, geri kalan her ekran
+ * panelin değerleriyle çalışıyor.
+ *
+ * **`null` geçilirse hiç reklam gösterilmez.** İlaç modülü (Modül 16) böyle
+ * kullanıyor: doz kaydının ardından ekranı kaplayan bir reklam, ilacı
+ * verirken telefona bakan ebeveyni en kötü anda dışarı atar ve sağlık
+ * bağlamında reklam göstermek mağaza politikası açısından da tartışmalı.
+ * Kaydetme onay penceresi yine çalışır; yalnızca tetik atlanır.
  */
 export async function withSaveFeedback<T>(
   fn: () => Promise<T>,
   message?: string,
-  adTrigger: AdTrigger = 'save',
+  adTrigger: AdTrigger | null = 'save',
+  adOptions?: AdOptions,
 ): Promise<T> {
   const { begin, succeed, fail } = useSaveFeedbackStore.getState();
   begin();
@@ -60,7 +71,7 @@ export async function withSaveFeedback<T>(
      * KESİNLİKLE kaydı başarısız göstermemeli.
      */
     try {
-      showAdAfterAction(adTrigger);
+      if (adTrigger !== null) showAdAfterAction(adTrigger, adOptions);
     } catch {
       // Reklam hatası kaydı etkilemez.
     }

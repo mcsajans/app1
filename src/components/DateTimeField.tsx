@@ -275,7 +275,74 @@ export function TimeListField({
   );
 }
 
+/**
+ * Tek bir **an**: tarih + saat yan yana.
+ *
+ * Elle kayıtta ("13:20'de uyudu, 15:05'te uyandı") tarih ve saat hep birlikte
+ * giriliyor; ayrı ayrı `DateField`/`TimeField` yerleştirmek her ekranda aynı
+ * birleştirme mantığını — iki metin değerinden tek bir zaman üretmeyi —
+ * yeniden yazdırıyordu.
+ *
+ * Değer **milisaniye** olarak taşınır (yerel saat). `NaN` "henüz seçilmedi"
+ * demektir; seçiciler o durumda bugünü/şu anı önerir ama alan boş görünür.
+ *
+ * İleri tarih takvimde de kapalıdır (`maximumDate`): geçmiş bir kaydı
+ * girerken gelecekteki bir günü seçebilmek yalnızca hata üretirdi.
+ */
+export function MomentField({
+  label,
+  value,
+  onChange,
+  disabled,
+  error,
+}: {
+  label: string;
+  /** Yerel zamanda milisaniye; `NaN` → henüz seçilmedi. */
+  value: number;
+  onChange: (ms: number) => void;
+  disabled?: boolean;
+  error?: string | null;
+}) {
+  const valid = Number.isFinite(value);
+  const current = valid ? new Date(value) : new Date();
+  const dateValue = valid ? toDateValue(current) : null;
+  const timeValue = valid ? toTimeValue(current) : null;
+
+  const compose = (d: string, t: string) => {
+    const next = new Date(`${d}T${t}:00`);
+    if (!Number.isNaN(next.getTime())) onChange(next.getTime());
+  };
+
+  return (
+    <View style={s.moment}>
+      <Text style={s.label}>{label}</Text>
+      <View style={s.momentRow}>
+        <View style={s.momentDate}>
+          <DateField
+            value={dateValue}
+            onChange={(d) => compose(d, timeValue ?? toTimeValue(new Date()))}
+            disabled={disabled}
+            maximumDate={new Date()}
+          />
+        </View>
+        <View style={s.momentTime}>
+          <TimeField
+            value={timeValue}
+            onChange={(t) => compose(dateValue ?? toDateValue(new Date()), t)}
+            disabled={disabled}
+          />
+        </View>
+      </View>
+      {error ? <Text style={s.hint}>{error}</Text> : null}
+    </View>
+  );
+}
+
 const s = StyleSheet.create({
+  moment: { gap: 2 },
+  momentRow: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start' },
+  momentDate: { flex: 3 },
+  momentTime: { flex: 2 },
   wrap: { gap: 6 },
   label: { ...typography.small, color: colors.textSoft, fontWeight: '600', marginTop: spacing.sm },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },

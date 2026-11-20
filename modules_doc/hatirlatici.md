@@ -52,3 +52,28 @@ Sen kıdemli bir Full-Stack Yazılım Mimarısın. Projemizde Bebek & Çocuk Tak
 2. **Adım 2:** Tamamlanan backend API'lerinin istek/yanıt detaylarını `teknik_dokuman.md` dosyasına kaydet.
 3. **Adım 3:** React Native projesine geç; `reminderService` ve yerel push bildirim izin/zamanlama servislerini kurgula.
 4. **Adım 4:** Hatırlatıcı oluşturma formu ve aktif alarmlar listesi UI bileşenlerini geliştirip test et.
+
+---
+
+## Reklam davranışı (2026-11-21)
+
+| Eylem | Tetik |
+|-------|-------|
+| "+ Yeni hatırlatıcı" → Kaydet | `save` |
+| Hatırlatıcıyı düzenle → Değişiklikleri kaydet | `save` |
+| "+ Sessiz saat ekle" → Kaydet | `save` |
+
+Hatırlatıcının **kendi bildirimi** reklamla ilgisiz: o cihazda planlanan
+yerel bir alarm. Açma/kapama anahtarı ve silme reklam tetiklemez.
+
+Ortak kurallar (ayrıntı: `TEKNIK_DOKUMAN.md` §23):
+
+- Tetikleyici panelden açılıp kapatılır (`/admin/ads`); ana anahtar kapalıyken
+  hiçbir istek atılmaz.
+- Reklam **kayıttan sonra** ve `await` edilmeden çağrılır; hiç `throw` etmez.
+  Kayıt hiçbir koşulda reklamdan etkilenmez.
+- Frekans sınırı (varsayılan 3 dk) ve oturum tavanı (5) her tetiği kapsar;
+  ninni çalarken, uygulama arka plandayken ve kaydetme onay penceresi
+  açıkken gösterim atlanır.
+- Ekranın altındaki **sabit banner** ayrı bir iş: tetikleyiciye bağlı değil,
+  her ekranda duruyor (§23.7).

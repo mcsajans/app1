@@ -61,3 +61,55 @@ Sen kıdemli bir Full-Stack Yazılım Mimarısın. Projemizde Bebek & Çocuk Tak
 4. **Adım 4:** Ek gıda formu, alerji takip uyarıları ve geçmiş listesi UI bileşenlerini geliştirip test et.
 
 Sırasıyla bu adımları takip ederek geliştirmeye başla.
+---
+
+## Ek Geliştirme — Ekleme formu modale taşındı (2026-11-21)
+
+**Ekran artık kayıtları gösteriyor.** Yedi alanlık ekleme formu ekranın
+ortasında sabit duruyordu; alerji uyarısından sonra gelen ilk şey formdu ve
+asıl soru — "bugün ne yedi, neye tepki verdi" — formun altında, çoğu
+telefonda ekran dışında kalıyordu.
+
+Yeni düzen:
+
+```
+[ Alerji / reaksiyon uyarısı ]        ← varsa
+[ + Ek gıda ekle ]                    ← modal açar
+Son kayıtlar
+  🥕 Havuç püresi · Sebze · 2 kaşık   14:20
+  🍎 Elma · Meyve · 3 gün kuralı      11:05
+```
+
+- **Form alt sayfada** (`SolidFormSheet`, `BottomSheet` üzerine): yiyecek,
+  hızlı seçim etiketleri, kategori, tepki, miktar + birim, 3 gün kuralı
+  anahtarı ve not. Kaydet/Vazgeç yan yana.
+- **Sayfa her açılışta `key` ile yeniden bağlanıyor**; bir önceki kaydın
+  yiyecek adı ve notu formda kalmıyor.
+- **Sayfa yalnızca kayıt geçtiyse kapanıyor.** Sunucu hatası dönerse form
+  açık kalıyor ve hata üstte görünüyor — doldurulan alanlar kaybolmuyor.
+- **Kayıttan sonra tam ekran reklam** (`save` tetiği; panelden açılıp
+  kapanıyor, gecikmesi de orada — `TEKNIK_DOKUMAN.md` §23.4).
+- Etiket sözlükleri (`labels.ts`) ekran ve form arasında paylaşılıyor.
+
+---
+
+## Reklam davranışı (2026-11-21)
+
+| Eylem | Tetik |
+|-------|-------|
+| "+ Ek gıda ekle" → Kaydet | `save` |
+
+Alerji uyarı kartı ve geçmiş listesi reklam tetiklemez; yalnızca kayıt yazan
+eylem tetikler.
+
+Ortak kurallar (ayrıntı: `TEKNIK_DOKUMAN.md` §23):
+
+- Tetikleyici panelden açılıp kapatılır (`/admin/ads`); ana anahtar kapalıyken
+  hiçbir istek atılmaz.
+- Reklam **kayıttan sonra** ve `await` edilmeden çağrılır; hiç `throw` etmez.
+  Kayıt hiçbir koşulda reklamdan etkilenmez.
+- Frekans sınırı (varsayılan 3 dk) ve oturum tavanı (5) her tetiği kapsar;
+  ninni çalarken, uygulama arka plandayken ve kaydetme onay penceresi
+  açıkken gösterim atlanır.
+- Ekranın altındaki **sabit banner** ayrı bir iş: tetikleyiciye bağlı değil,
+  her ekranda duruyor (§23.7).

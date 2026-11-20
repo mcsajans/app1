@@ -5,7 +5,10 @@ import { Chips } from '../../components/records';
 import { DateField } from '../../components/DateTimeField';
 import { Icon } from '../../components/Icon';
 import { ReadOnlyBanner, useCanEdit } from '../../components/permission';
-import { Button, Card, EmptyState, FormError, Loading, Screen, SectionTitle } from '../../components/ui';
+import { BottomSheet } from '../../components/BottomSheet';
+import {
+  Button, ButtonRow, Card, EmptyState, FormError, Loading, Screen, SectionTitle,
+} from '../../components/ui';
 import { errorText } from '../../core/api/client';
 import { growthService, localDate, type GrowthMeasurement, type GrowthSeries } from '../../core/api/modules';
 import { withSaveFeedback } from '../../core/feedback/withSaveFeedback';
@@ -64,6 +67,9 @@ export default function GrowthScreen() {
     summary.reload();
   };
 
+  /** Ölçüm sayfası açık mı — form ekranda sabit durmuyor. */
+  const [formOpen, setFormOpen] = useState(false);
+
   const clear = () => {
     setWeight('');
     setHeight('');
@@ -73,8 +79,18 @@ export default function GrowthScreen() {
     setError(null);
   };
 
-  /** Geçmişteki bir satır forma yüklenir; kaydetmek o günü günceller. */
+  /** Boş formla açar — "+ Ölçüm ekle". */
+  const openForm = () => {
+    clear();
+    setFormOpen(true);
+  };
+
+  /**
+   * Geçmişteki bir satır forma yüklenir ve **sayfa açılır**; kaydetmek o
+   * günü günceller (aynı güne ikinci kayıt üzerine yazıyor, §22.15).
+   */
   const loadRow = (row: GrowthMeasurement) => {
+    setFormOpen(true);
     setDay(row.measured_on);
     setWeight(row.weight_g === null ? '' : String(row.weight_g));
     setHeight(row.height_cm === null ? '' : String(row.height_cm).replace('.', ','));
@@ -111,6 +127,7 @@ export default function GrowthScreen() {
           note: note.trim() || null,
         }));
         clear();
+        setFormOpen(false);
         reload();
       } catch (err) {
         setError(errorText(err));
@@ -217,14 +234,66 @@ export default function GrowthScreen() {
         )}
       </Card>
 
-      {/* ── Yeni ölçüm ── */}
+      {/*
+        Ölçüm formu alt sayfada; ekranın işi son ölçümü, grafiği ve geçmişi
+        göstermek. Geçmişten bir satıra dokunmak da bu sayfayı o günün
+        değerleriyle açıyor.
+      */}
       {canEdit ? (
-        <>
-          <SectionTitle hint="Aynı güne ikinci kez kaydetmek o günün ölçümünü günceller.">
-            Ölçüm ekle
-          </SectionTitle>
+        <Button label="+ Ölçüm ekle" onPress={openForm} disabled={busy} />
+      ) : null}
+
+      {/* ── Geçmiş ── */}
+      <SectionTitle hint={canEdit ? 'Dokunup düzenle, uzun basıp sil.' : undefined}>
+        Geçmiş
+      </SectionTitle>
+      <View style={s.feed}>
+        {list.loading && rows.length === 0 ? (
           <Card>
-            <DateField label="Ölçüm tarihi" value={day} onChange={setDay} disabled={busy} />
+            <Loading label="Ölçümler yükleniyor…" />
+          </Card>
+        ) : rows.length === 0 ? (
+          <Card>
+            <Text style={s.hint}>Henüz ölçüm girilmedi.</Text>
+          </Card>
+        ) : (
+          rows.map((row) => (
+            <Pressable
+              key={row.id}
+              onPress={canEdit ? () => loadRow(row) : undefined}
+              onLongPress={canEdit ? () => onDelete(row) : undefined}
+              disabled={busy}
+              style={s.row2}
+            >
+              <View style={[s.rowIcon, { backgroundColor: moduleTint.growth }]}>
+                <Icon name="growth" size={20} color={colors.text} />
+              </View>
+              <View style={s.rowText}>
+                <Text style={s.rowTitle}>{dayText(row.measured_on)}</Text>
+                <Text style={s.rowMeta} numberOfLines={1}>
+                  {GROWTH_METRICS
+                    .map((m) => {
+                      const v = valueOf(row, m.key);
+                      return v === null ? null : `${m.short}: ${formatMetric(m.key, v)}`;
+                    })
+                    .filter(Boolean)
+                    .join(' · ')}
+                </Text>
+                {row.note ? <Text style={s.rowNote}>{row.note}</Text> : null}
+              </View>
+            </Pressable>
+          ))
+        )}
+      </View>
+
+      <BottomSheet
+        visible={formOpen}
+        busy={busy}
+        onClose={() => setFormOpen(false)}
+        title="Ölçüm ekle"
+        subtitle="Aynı güne ikinci kez kaydetmek o günün ölçümünü günceller."
+      >
+        <DateField label="Ölçüm tarihi" value={day} onChange={setDay} disabled={busy} />
 
             <Text style={s.label}>{METRIC_BY_KEY.weight.inputLabel}</Text>
             <TextInput
@@ -273,55 +342,12 @@ export default function GrowthScreen() {
               placeholderTextColor={colors.textFaint}
               editable={!busy}
             />
-
-            <View style={s.gap} />
-            <Button label={busy ? 'Kaydediliyor…' : 'Kaydet'} onPress={save} disabled={busy} />
-          </Card>
-        </>
-      ) : null}
-
-      {/* ── Geçmiş ── */}
-      <SectionTitle hint={canEdit ? 'Dokunup düzenle, uzun basıp sil.' : undefined}>
-        Geçmiş
-      </SectionTitle>
-      <View style={s.feed}>
-        {list.loading && rows.length === 0 ? (
-          <Card>
-            <Loading label="Ölçümler yükleniyor…" />
-          </Card>
-        ) : rows.length === 0 ? (
-          <Card>
-            <Text style={s.hint}>Henüz ölçüm girilmedi.</Text>
-          </Card>
-        ) : (
-          rows.map((row) => (
-            <Pressable
-              key={row.id}
-              onPress={canEdit ? () => loadRow(row) : undefined}
-              onLongPress={canEdit ? () => onDelete(row) : undefined}
-              disabled={busy}
-              style={s.row2}
-            >
-              <View style={[s.rowIcon, { backgroundColor: moduleTint.growth }]}>
-                <Icon name="growth" size={20} color={colors.text} />
-              </View>
-              <View style={s.rowText}>
-                <Text style={s.rowTitle}>{dayText(row.measured_on)}</Text>
-                <Text style={s.rowMeta} numberOfLines={1}>
-                  {GROWTH_METRICS
-                    .map((m) => {
-                      const v = valueOf(row, m.key);
-                      return v === null ? null : `${m.short}: ${formatMetric(m.key, v)}`;
-                    })
-                    .filter(Boolean)
-                    .join(' · ')}
-                </Text>
-                {row.note ? <Text style={s.rowNote}>{row.note}</Text> : null}
-              </View>
-            </Pressable>
-          ))
-        )}
-      </View>
+        <View style={s.gap} />
+        <ButtonRow>
+          <Button label={busy ? 'Kaydediliyor…' : 'Kaydet'} onPress={save} disabled={busy} />
+          <Button label="Vazgeç" variant="ghost" onPress={() => setFormOpen(false)} disabled={busy} />
+        </ButtonRow>
+      </BottomSheet>
     </Screen>
   );
 }

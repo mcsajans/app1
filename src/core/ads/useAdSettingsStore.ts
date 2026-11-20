@@ -25,12 +25,15 @@ import { getDb } from '../db';
  */
 
 /** `GET /api/v1/ads/config` gövdesi (sunucu: `lib/adSettings.ts`). */
-export type AdTrigger = 'save' | 'complete' | 'invite' | 'timer_start';
+export type AdTrigger = 'save' | 'complete' | 'invite' | 'timer_start' | 'baby_switch';
 
 export type AdConfig = {
   enabled: boolean;
   use_test_ids: boolean;
+  /** Ekranın altındaki sabit banner açık mı (sunucu göçü 024). */
+  banner_enabled: boolean;
   interstitial: { android: string | null; ios: string | null };
+  banner: { android: string | null; ios: string | null };
   child_directed: boolean;
   under_age_of_consent: boolean;
   ump_enabled: boolean;
@@ -55,7 +58,13 @@ export type AdConfig = {
 export const AD_CONFIG_FALLBACK: AdConfig = {
   enabled: false,
   use_test_ids: true,
+  /*
+   * Ana anahtar (`enabled`) kapalıyken zaten hiçbir şey gösterilmiyor; bu
+   * alanın varsayılanı sunucudakiyle aynı olsun diye açık.
+   */
+  banner_enabled: true,
   interstitial: { android: null, ios: null },
+  banner: { android: null, ios: null },
   child_directed: false,
   under_age_of_consent: false,
   ump_enabled: true,
@@ -66,7 +75,9 @@ export const AD_CONFIG_FALLBACK: AdConfig = {
   action_delay_ms: 3000,
   respect_quiet_hours: false,
   test_device_ids: [],
-  triggers: { save: true, complete: true, invite: true, timer_start: false },
+  triggers: {
+    save: true, complete: true, invite: true, timer_start: false, baby_switch: true,
+  },
 };
 
 const CACHE_KEY = 'ads';
@@ -88,13 +99,16 @@ export function normalizeAdConfig(raw: unknown): AdConfig {
   const str = (v: unknown) => (typeof v === 'string' && v.trim() !== '' ? v.trim() : null);
 
   const unit = (o.interstitial ?? {}) as Record<string, unknown>;
+  const bannerUnit = (o.banner ?? {}) as Record<string, unknown>;
   const trig = (o.triggers ?? {}) as Record<string, unknown>;
   const f = AD_CONFIG_FALLBACK;
 
   return {
     enabled: bool(o.enabled, f.enabled),
     use_test_ids: bool(o.use_test_ids, f.use_test_ids),
+    banner_enabled: bool(o.banner_enabled, f.banner_enabled),
     interstitial: { android: str(unit.android), ios: str(unit.ios) },
+    banner: { android: str(bannerUnit.android), ios: str(bannerUnit.ios) },
     child_directed: bool(o.child_directed, f.child_directed),
     under_age_of_consent: bool(o.under_age_of_consent, f.under_age_of_consent),
     ump_enabled: bool(o.ump_enabled, f.ump_enabled),
@@ -117,6 +131,7 @@ export function normalizeAdConfig(raw: unknown): AdConfig {
       complete: bool(trig.complete, f.triggers.complete),
       invite: bool(trig.invite, f.triggers.invite),
       timer_start: bool(trig.timer_start, f.triggers.timer_start),
+      baby_switch: bool(trig.baby_switch, f.triggers.baby_switch),
     },
   };
 }
@@ -124,6 +139,25 @@ export function normalizeAdConfig(raw: unknown): AdConfig {
 /** Bu platformun geçiş reklamı birimi; yoksa `null`. */
 export function interstitialUnitId(config: AdConfig): string | null {
   return Platform.OS === 'ios' ? config.interstitial.ios : config.interstitial.android;
+}
+
+/** Bu platformun banner birimi; yoksa `null`. */
+export function bannerUnitId(config: AdConfig): string | null {
+  return Platform.OS === 'ios' ? config.banner.ios : config.banner.android;
+}
+
+/**
+ * Alt banner çizilsin mi — yalnızca **panel ayarına** bakar.
+ *
+ * Kullanıcının çubuğu kapatmış olması (`useBannerStore.collapsed`) ayrı bir
+ * konu: o geçici, bu kalıcı. Test kimlikleri açıkken birim kimliği
+ * gerekmiyor, `TestIds.BANNER` kullanılıyor.
+ */
+export function bannerAllowed(config: AdConfig): boolean {
+  if (!config.enabled) return false;
+  if (!config.banner_enabled) return false;
+  if (!config.use_test_ids && !bannerUnitId(config)) return false;
+  return true;
 }
 
 type AdSettingsStore = {

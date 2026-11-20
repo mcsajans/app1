@@ -6,7 +6,10 @@ import {
   amountText, clockOf, formatDuration, humanDuration, useElapsedSeconds,
 } from '../../components/records';
 import { RecordDetailSheet, fullMoment, type RecordDetail } from '../../components/RecordDetail';
-import { Button, Card, EmptyState, FormError, Loading, Screen, SectionTitle } from '../../components/ui';
+import { BottomSheet } from '../../components/BottomSheet';
+import {
+  Button, ButtonRow, Card, EmptyState, FormError, Loading, Screen, SectionTitle,
+} from '../../components/ui';
 import { ReadOnlyBanner, useCanEdit } from '../../components/permission';
 import { errorText } from '../../core/api/client';
 import {
@@ -91,6 +94,18 @@ export default function BottleScreen() {
     summary.reload();
   };
 
+  /** Ekleme sayfası açık mı. Form ekranda sabit durmuyor (bkz. aşağıda). */
+  const [formOpen, setFormOpen] = useState(false);
+
+  /** Sayfayı temiz açar: bir önceki kaydın miktarı ve notu formda kalmasın. */
+  const openForm = () => {
+    setError(null);
+    setAmount('');
+    setNote('');
+    setStartedAt(null);
+    setFormOpen(true);
+  };
+
   const save = async () => {
     if (!babyId) return;
 
@@ -121,6 +136,7 @@ export default function BottleScreen() {
       setAmount('');
       setNote('');
       setStartedAt(null);
+      setFormOpen(false);
       refreshAll();
     } catch (err) {
       setError(errorText(err));
@@ -203,11 +219,85 @@ export default function BottleScreen() {
         </Card>
       ) : null}
 
-      {/* ── Ekleme formu ── */}
-      <SectionTitle hint="Miktarı ml veya cl girebilirsin; toplamlar ml olarak hesaplanır.">
-        Biberon ekle
-      </SectionTitle>
+      {/*
+        Ekleme formu alt sayfada; ekranın işi son öğünü, günlük özeti ve
+        kayıtları göstermek. Düğme en üstte: en sık yapılan iş o.
+      */}
+      <Button label="+ Biberon ekle" onPress={openForm} disabled={busy || !canEdit} />
+
+      {/* ── Günlük özet ── */}
+      <SectionTitle hint="Su, biberon ml toplamına dâhil edilmez.">Bugün</SectionTitle>
       <Card>
+        {summary.loading && !sum ? (
+          <Loading label="Özet yükleniyor…" />
+        ) : summary.error ? (
+          <Text style={s.hint}>{summary.error}</Text>
+        ) : (
+          <>
+            <View style={s.tiles}>
+              <StatTile label="Öğün" value={String(sum?.bottle_count ?? 0)} />
+              <StatTile label="Toplam" value={`${sum?.bottle_total_ml ?? 0} ml`} tone="good" />
+              <StatTile label="Ortalama" value={`${sum?.avg_ml ?? 0} ml`} />
+            </View>
+            <View style={s.tilesGap} />
+            <View style={s.tiles}>
+              <StatTile
+                label="Anne sütü"
+                value={`${sum?.breastmilk_ml ?? 0} ml`}
+                hint={`${sum?.breastmilk_count ?? 0} öğün`}
+              />
+              <StatTile
+                label="Formül"
+                value={`${sum?.formula_ml ?? 0} ml`}
+                hint={`${sum?.formula_count ?? 0} öğün`}
+              />
+              <StatTile
+                label="Su"
+                value={`${sum?.water_ml ?? 0} ml`}
+                hint={`${sum?.water_count ?? 0} kez`}
+              />
+            </View>
+          </>
+        )}
+      </Card>
+
+      {/* ── Geçmiş ── */}
+      <SectionTitle hint="Uzun basıp silebilirsin.">Geçmiş</SectionTitle>
+      <Card>
+        {list.loading && records.length === 0 ? (
+          <Loading label="Kayıtlar yükleniyor…" />
+        ) : records.length === 0 ? (
+          <Text style={s.hint}>Henüz biberon kaydı yok.</Text>
+        ) : (
+          records.map((r) => (
+            <RecordRow
+              key={r.id}
+              icon={r.feed_type === 'water' ? 'water' : r.feed_type === 'bottle_breastmilk' ? 'breastfeeding' : 'bottle'}
+              title={`${CONTENT_SHORT[r.feed_type] ?? 'Biberon'} · ${amountText(r.amount)} ${r.amount_unit ?? ''}`.trim()}
+              detail={[
+                r.duration_sec ? formatDuration(r.duration_sec) : null,
+                r.note,
+                r.actor_name,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+              right={clockOf(r.started_at)}
+              onPress={() => setDetail(detailOf(r))}
+              onLongPress={canEdit ? () => onDelete(r) : undefined}
+            />
+          ))
+        )}
+      </Card>
+
+      <RecordDetailSheet detail={detail} onClose={() => setDetail(null)} />
+
+      <BottomSheet
+        visible={formOpen}
+        busy={busy}
+        onClose={() => setFormOpen(false)}
+        title="Biberon ekle"
+        subtitle="Miktarı ml veya cl girebilirsin; toplamlar ml olarak hesaplanır."
+      >
         <Text style={s.label}>İçerik</Text>
         <Chips
           options={BOTTLE_CONTENTS}
@@ -275,76 +365,12 @@ export default function BottleScreen() {
           placeholderTextColor={colors.textFaint}
           editable={!busy}
         />
-
         <View style={s.gap} />
-        <Button label={busy ? 'Kaydediliyor…' : 'Kaydet'} onPress={save} disabled={busy || !canEdit} />
-      </Card>
-
-      {/* ── Günlük özet ── */}
-      <SectionTitle hint="Su, biberon ml toplamına dâhil edilmez.">Bugün</SectionTitle>
-      <Card>
-        {summary.loading && !sum ? (
-          <Loading label="Özet yükleniyor…" />
-        ) : summary.error ? (
-          <Text style={s.hint}>{summary.error}</Text>
-        ) : (
-          <>
-            <View style={s.tiles}>
-              <StatTile label="Öğün" value={String(sum?.bottle_count ?? 0)} />
-              <StatTile label="Toplam" value={`${sum?.bottle_total_ml ?? 0} ml`} tone="good" />
-              <StatTile label="Ortalama" value={`${sum?.avg_ml ?? 0} ml`} />
-            </View>
-            <View style={s.tilesGap} />
-            <View style={s.tiles}>
-              <StatTile
-                label="Anne sütü"
-                value={`${sum?.breastmilk_ml ?? 0} ml`}
-                hint={`${sum?.breastmilk_count ?? 0} öğün`}
-              />
-              <StatTile
-                label="Formül"
-                value={`${sum?.formula_ml ?? 0} ml`}
-                hint={`${sum?.formula_count ?? 0} öğün`}
-              />
-              <StatTile
-                label="Su"
-                value={`${sum?.water_ml ?? 0} ml`}
-                hint={`${sum?.water_count ?? 0} kez`}
-              />
-            </View>
-          </>
-        )}
-      </Card>
-
-      {/* ── Geçmiş ── */}
-      <SectionTitle hint="Uzun basıp silebilirsin.">Geçmiş</SectionTitle>
-      <Card>
-        {list.loading && records.length === 0 ? (
-          <Loading label="Kayıtlar yükleniyor…" />
-        ) : records.length === 0 ? (
-          <Text style={s.hint}>Henüz biberon kaydı yok.</Text>
-        ) : (
-          records.map((r) => (
-            <RecordRow
-              key={r.id}
-              icon={r.feed_type === 'water' ? 'water' : r.feed_type === 'bottle_breastmilk' ? 'breastfeeding' : 'bottle'}
-              title={`${CONTENT_SHORT[r.feed_type] ?? 'Biberon'} · ${amountText(r.amount)} ${r.amount_unit ?? ''}`.trim()}
-              detail={[
-                r.duration_sec ? formatDuration(r.duration_sec) : null,
-                r.note,
-                r.actor_name,
-              ]
-                .filter(Boolean)
-                .join(' · ')}
-              right={clockOf(r.started_at)}
-              onPress={() => setDetail(detailOf(r))}
-              onLongPress={canEdit ? () => onDelete(r) : undefined}
-            />
-          ))
-        )}
-      </Card>
-
-      <RecordDetailSheet detail={detail} onClose={() => setDetail(null)} />
+        <ButtonRow>
+          <Button label={busy ? 'Kaydediliyor…' : 'Kaydet'} onPress={save} disabled={busy || !canEdit} />
+          <Button label="Vazgeç" variant="ghost" onPress={() => setFormOpen(false)} disabled={busy} />
+        </ButtonRow>
+      </BottomSheet>
     </Screen>
   );
 }

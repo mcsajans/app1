@@ -4,7 +4,10 @@ import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-nativ
 import { Chips, clockOf } from '../../components/records';
 import { DateField, TimeField } from '../../components/DateTimeField';
 import { ReadOnlyBanner, useCanEdit } from '../../components/permission';
-import { Button, Card, EmptyState, FormError, Loading, Screen, SectionTitle } from '../../components/ui';
+import { BottomSheet } from '../../components/BottomSheet';
+import {
+  Button, ButtonRow, Card, EmptyState, FormError, Loading, Screen,
+} from '../../components/ui';
 import { errorText } from '../../core/api/client';
 import {
   TASK_TYPES, familyService, localDate, taskService, tzOffsetMin,
@@ -347,20 +350,13 @@ export default function TasksScreen() {
   }
 
   /*
-   * Form tek yerde tanımlanır, iki yerde çizilir: yeni görev listenin
-   * ALTINDA, düzenleme listenin ÜSTÜNDE açılır. Düzenleme de altta açılsaydı
-   * uzun bir listede ekranın dışında kalır ve "Düzenle" düğmesi hiçbir şey
-   * yapmamış gibi görünürdü.
+   * Form **alt sayfada** açılıyor; hem yeni görev hem düzenleme için aynı
+   * içerik. Önceden iki yerde çiziliyordu (yeni görev listenin altında,
+   * düzenleme üstünde) çünkü uzun bir listede alttaki form ekran dışında
+   * kalıyordu — modal bu sorunu tamamen ortadan kaldırıyor.
    */
   const form = (
     <>
-      <SectionTitle
-        hint={editing
-          ? 'Değişiklik atanan kişiye ve görevi açana bildirilir.'
-          : 'Atanan kişi görevi listesinde görür ve tamamlar.'}
-      >
-        {editing ? 'Görevi düzenle' : 'Yeni görev'}
-      </SectionTitle>
       <Card>
         <Text style={s.label}>Görev türü</Text>
         <Chips
@@ -537,12 +533,14 @@ export default function TasksScreen() {
         />
 
         <View style={s.gap} />
-        <Button
-          label={busy ? 'Kaydediliyor…' : editing ? 'Değişiklikleri kaydet' : 'Görevi oluştur'}
-          onPress={save}
-          disabled={busy}
-        />
-        <Button label="Vazgeç" variant="ghost" onPress={reset} disabled={busy} />
+        <ButtonRow>
+          <Button
+            label={busy ? 'Kaydediliyor…' : editing ? 'Değişiklikleri kaydet' : 'Görevi oluştur'}
+            onPress={save}
+            disabled={busy}
+          />
+          <Button label="Vazgeç" variant="ghost" onPress={reset} disabled={busy} />
+        </ButtonRow>
       </Card>
     </>
   );
@@ -552,7 +550,10 @@ export default function TasksScreen() {
       <ReadOnlyBanner />
       {error ? <FormError message={error} /> : null}
 
-      {editing ? form : null}
+      {/* Görev ekleme düğmesi listenin ÜSTÜNDE; form alt sayfada açılıyor. */}
+      {canEdit ? (
+        <Button label="+ Yeni görev" onPress={() => setOpen(true)} disabled={busy} />
+      ) : null}
 
       <Chips
         options={['open', 'done'] as const}
@@ -660,10 +661,17 @@ export default function TasksScreen() {
         )}
       </View>
 
-      {/* ── Oluşturma formu ── */}
-      {!canEdit || editing ? null : open ? form : (
-        <Button label="+ Yeni görev" onPress={() => setOpen(true)} />
-      )}
+      <BottomSheet
+        visible={open || editing !== null}
+        busy={busy}
+        onClose={reset}
+        title={editing ? 'Görevi düzenle' : 'Yeni görev'}
+        subtitle={editing
+          ? 'Değişiklik atanan kişiye ve görevi açana bildirilir.'
+          : 'Atanan kişi görevi listesinde görür ve tamamlar.'}
+      >
+        {form}
+      </BottomSheet>
     </Screen>
   );
 }

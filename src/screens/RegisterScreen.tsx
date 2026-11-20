@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ApiError, errorText } from '../core/api/client';
@@ -6,9 +6,11 @@ import {
   RELATIONSHIP_LABELS, SIGNUP_RELATIONSHIPS, type Relationship,
 } from '../core/api/modules';
 import { useAuthStore } from '../core/auth/useAuthStore';
+import { useConsentStore } from '../core/consents/useConsentStore';
 import { colors, radius, spacing, typography } from '../core/theme';
 import { Button, Card, Field, FormError, Screen } from '../components/ui';
 import { BrandLogo } from '../components/Brand';
+import { ConsentChecks } from '../components/ConsentChecks';
 
 const MIN_PASSWORD = 8;
 
@@ -29,6 +31,37 @@ export default function RegisterScreen({ onGoLogin }: { onGoLogin: () => void })
   const [error, setError] = useState<string | null>(null);
   const [fields, setFields] = useState<Record<string, string>>({});
 
+  /*
+   * Yasal onaylar panelden gelir (sunucu: migrations/022). Oturum açılmadan
+   * okunabilen bir uç; metinler de genel erişime açık sayfalarda yayınlanıyor.
+   * Liste indirilemezse (ağ yok) kutucuklar hiç çizilmez ve kayıt denemesi
+   * sunucudan okunur bir hata ile döner — sessizce onaysız kayıt AÇILMAZ.
+   */
+  const consents = useConsentStore((st) => st.items);
+  const loadConsents = useConsentStore((st) => st.loadPublic);
+  const [agreed, setAgreed] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    void loadConsents().catch(() => {
+      // Sessiz: kayıt denemesinde sunucu zaten eksik onayı söylüyor.
+    });
+  }, [loadConsents]);
+
+  const requiredCodes = useMemo(
+    () => consents.filter((c) => c.is_required).map((c) => c.code),
+    [consents],
+  );
+  const consentsOk = requiredCodes.every((code) => agreed.has(code));
+
+  const toggleConsent = (code: string) => {
+    setAgreed((prev) => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
+      return next;
+    });
+  };
+
   // Sunucu da aynı kuralları uygular; buradaki kontrol yalnızca erken geri bildirim.
   const mismatch = password2.length > 0 && password !== password2;
   const canSubmit =
@@ -36,6 +69,7 @@ export default function RegisterScreen({ onGoLogin }: { onGoLogin: () => void })
     email.trim().length > 0 &&
     password.length >= MIN_PASSWORD &&
     relationship !== null &&
+    consentsOk &&
     !mismatch &&
     !busy;
 
@@ -45,7 +79,7 @@ export default function RegisterScreen({ onGoLogin }: { onGoLogin: () => void })
     setError(null);
     setFields({});
     try {
-      await register(fullName, email, password, relationship!);
+      await register(fullName, email, password, relationship!, [...agreed]);
     } catch (err) {
       if (err instanceof ApiError && err.fields) setFields(err.fields);
       setError(errorText(err));
@@ -144,6 +178,24 @@ export default function RegisterScreen({ onGoLogin }: { onGoLogin: () => void })
             editable={!busy}
           />
 
+          {consents.length > 0 ? (
+            <View style={s.consents}>
+              <Text style={s.label}>Yasal onaylar</Text>
+              <Text style={s.hint}>
+                Yıldızlı onaylar zorunludur; verilmeden hesap açılamaz.
+              </Text>
+              <ConsentChecks
+                consents={consents}
+                checked={agreed}
+                onToggle={toggleConsent}
+                disabled={busy}
+              />
+              {fields.consents ? (
+                <Text style={s.fieldError}>Zorunlu onayların tamamı gerekli.</Text>
+              ) : null}
+            </View>
+          ) : null}
+
           <View style={s.actions}>
             <Button
               label={busy ? 'Hesap oluşturuluyor…' : 'Kayıt ol'}
@@ -167,6 +219,7 @@ const s = StyleSheet.create({
   title: { ...typography.h1, color: colors.text },
   subtitle: { ...typography.small, color: colors.textSoft, textAlign: 'center' },
   actions: { marginTop: spacing.sm },
+  consents: { marginTop: spacing.md, gap: spacing.xs },
 
   // ── yakınlık seçimi ──
   label: { ...typography.small, color: colors.text, fontWeight: '600', marginTop: spacing.sm },

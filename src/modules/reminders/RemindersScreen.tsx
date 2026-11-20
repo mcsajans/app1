@@ -3,7 +3,10 @@ import { Alert, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'rea
 
 import { Chips } from '../../components/records';
 import { DateField, TimeField, TimeListField } from '../../components/DateTimeField';
-import { Button, Card, EmptyState, FormError, Loading, Screen, SectionTitle } from '../../components/ui';
+import { BottomSheet } from '../../components/BottomSheet';
+import {
+  Button, ButtonRow, Card, EmptyState, FormError, Loading, Screen, SectionTitle,
+} from '../../components/ui';
 import { ReadOnlyBanner, useCanEdit } from '../../components/permission';
 import { errorText } from '../../core/api/client';
 import {
@@ -477,13 +480,13 @@ export default function RemindersScreen() {
   }
 
   /*
-   * Form tek yerde tanımlanır, iki yerde çizilir: yeni hatırlatıcı listenin
-   * ALTINDA, düzenleme listenin ÜSTÜNDE açılır. Düzenleme de altta açılsaydı
-   * çok hatırlatıcısı olan kullanıcıda ekranın dışında kalır ve "Düzenle"
-   * hiçbir şey yapmamış gibi görünürdü.
+   * Form **alt sayfada** açılıyor; hem yeni hatırlatıcı hem düzenleme için
+   * aynı içerik. Önceden iki yerde çiziliyordu (yeni olan listenin altında,
+   * düzenleme üstünde) çünkü uzun listede alttaki form ekran dışında
+   * kalıyordu — modal bu sorunu tamamen ortadan kaldırıyor.
    */
   const form = (
-    <Card>
+    <>
       <Text style={s.label}>{isEvent ? 'Etkinlik adı *' : 'Başlık *'}</Text>
       <TextInput
         style={s.input}
@@ -740,13 +743,15 @@ export default function RemindersScreen() {
       ) : null}
 
       <View style={s.gap} />
-      <Button
-        label={busy ? 'Kaydediliyor…' : editing ? 'Değişiklikleri kaydet' : 'Kaydet'}
-        onPress={save}
-        disabled={busy || !canEdit}
-      />
-      <Button label="Vazgeç" variant="ghost" onPress={closeForm} disabled={busy || !canEdit} />
-    </Card>
+      <ButtonRow>
+        <Button
+          label={busy ? 'Kaydediliyor…' : editing ? 'Değişiklikleri kaydet' : 'Kaydet'}
+          onPress={save}
+          disabled={busy || !canEdit}
+        />
+        <Button label="Vazgeç" variant="ghost" onPress={closeForm} disabled={busy || !canEdit} />
+      </ButtonRow>
+    </>
   );
 
   return (
@@ -837,7 +842,10 @@ export default function RemindersScreen() {
         </Card>
       ) : null}
 
-      {editing ? form : null}
+      {/* Ekleme düğmesi listenin ÜSTÜNDE; form alt sayfada açılıyor. */}
+      {canEdit ? (
+        <Button label="+ Yeni hatırlatıcı" onPress={() => setOpen(true)} disabled={busy} />
+      ) : null}
 
       <SectionTitle
         hint={canEdit
@@ -915,9 +923,16 @@ export default function RemindersScreen() {
         )}
       </Card>
 
-      {editing ? null : open ? form : (
-        <Button label="+ Yeni hatırlatıcı" variant="ghost" onPress={() => setOpen(true)} />
-      )}
+
+      <BottomSheet
+        visible={open || editing !== null}
+        busy={busy}
+        onClose={closeForm}
+        title={editing ? 'Hatırlatıcıyı düzenle' : 'Yeni hatırlatıcı'}
+        subtitle="Alarm cihazda çalar; sunucuda push altyapısı yok."
+      >
+        {form}
+      </BottomSheet>
 
       {/* ── Sessiz saatler ── */}
       <SectionTitle hint="Bu aralıklarda alarmlar ertelenir, sessize alınır veya atlanır.">
@@ -948,9 +963,19 @@ export default function RemindersScreen() {
         )}
       </Card>
 
-      {quietOpen ? (
-        <Card>
-          <Text style={s.label}>Etiket</Text>
+      {/* Sessiz saat formu da alt sayfada; listeyle aynı düzen. */}
+      {canEdit ? (
+        <Button label="+ Sessiz saat ekle" variant="ghost" onPress={() => setQuietOpen(true)} disabled={busy} />
+      ) : null}
+
+      <BottomSheet
+        visible={quietOpen}
+        busy={busy}
+        onClose={() => setQuietOpen(false)}
+        title="Sessiz saat ekle"
+        subtitle="Bu aralıklarda alarmlar ertelenir, sessize alınır veya atlanır."
+      >
+        <Text style={s.label}>Etiket</Text>
           <TextInput
             style={s.input}
             value={qLabel}
@@ -986,14 +1011,12 @@ export default function RemindersScreen() {
               );
             })}
           </View>
-
-          <View style={s.gap} />
+        <View style={s.gap} />
+        <ButtonRow>
           <Button label={busy ? 'Kaydediliyor…' : 'Sessiz saati kaydet'} onPress={saveQuiet} disabled={busy || !canEdit} />
           <Button label="Vazgeç" variant="ghost" onPress={() => setQuietOpen(false)} disabled={busy || !canEdit} />
-        </Card>
-      ) : (
-        <Button label="+ Sessiz saat ekle" variant="ghost" onPress={() => setQuietOpen(true)} />
-      )}
+        </ButtonRow>
+      </BottomSheet>
     </Screen>
   );
 }

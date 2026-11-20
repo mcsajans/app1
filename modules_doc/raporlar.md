@@ -41,3 +41,25 @@ Sen kıdemli bir Full-Stack Yazılım Mimarısın. Projemizde Bebek & Çocuk Tak
 2. **Adım 2:** Tamamlanan raporlama API'lerini ve çıktı formatlarını `teknik_dokuman.md` dosyasına kaydet.
 3. **Adım 3:** React Native projesine geç; `reportService` ve grafik kütüphanesi entegrasyonunu kurgula.
 4. **Adım 4:** Rapor grafikleri, tarih aralığı filtreleri ve PDF paylaşım UI bileşenlerini geliştirip test et.
+
+---
+
+## Reklam davranışı (2026-11-21)
+
+Raporlar salt okunur: kayıt yazmadığı için geçiş reklamı tetiklemez.
+PDF/e-posta gönderimi de tetiklemiyor — uzun süren bir işin sonunda açılan
+reklam, işin bitip bitmediğini belirsizleştirirdi.
+
+Ekranın altındaki sabit banner burada da duruyor (§23.7).
+
+Ortak kurallar (ayrıntı: `TEKNIK_DOKUMAN.md` §23):
+
+- Tetikleyici panelden açılıp kapatılır (`/admin/ads`); ana anahtar kapalıyken
+  hiçbir istek atılmaz.
+- Reklam **kayıttan sonra** ve `await` edilmeden çağrılır; hiç `throw` etmez.
+  Kayıt hiçbir koşulda reklamdan etkilenmez.
+- Frekans sınırı (varsayılan 3 dk) ve oturum tavanı (5) her tetiği kapsar;
+  ninni çalarken, uygulama arka plandayken ve kaydetme onay penceresi
+  açıkken gösterim atlanır.
+- Ekranın altındaki **sabit banner** ayrı bir iş: tetikleyiciye bağlı değil,
+  her ekranda duruyor (§23.7).

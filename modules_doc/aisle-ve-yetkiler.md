@@ -99,3 +99,27 @@ görebilir, kim yazabilir, kim yönetebilir" sorusunu yanıtlar.
 3. **Adım 3:** Tamamlanan backend API'lerinin istek/yanıt detaylarını `TEKNIK_DOKUMAN.md` dosyasına kaydet.
 4. **Adım 4:** React Native projesine geç; `familyService` modülünü oluştur, üye listesi ve yetki yönetimi UI'sını geliştir.
 5. **Adım 5:** Davet oluşturma, kod paylaşma ve davet kabul akışlarını geliştirip test et.
+
+---
+
+## Reklam davranışı (2026-11-21)
+
+| Eylem | Tetik |
+|-------|-------|
+| "+ Aileye birini davet et" → Davet oluştur | `invite` |
+
+`invite` panelde ayrı bir anahtar. Yetki değiştirme, daveti iptal etme ve
+aileden ayrılma reklam **tetiklemez**: bunlar sonuçları geri alınması zor
+yönetim işleri ve araya tam ekran reklam koymak yanlış olurdu.
+
+Ortak kurallar (ayrıntı: `TEKNIK_DOKUMAN.md` §23):
+
+- Tetikleyici panelden açılıp kapatılır (`/admin/ads`); ana anahtar kapalıyken
+  hiçbir istek atılmaz.
+- Reklam **kayıttan sonra** ve `await` edilmeden çağrılır; hiç `throw` etmez.
+  Kayıt hiçbir koşulda reklamdan etkilenmez.
+- Frekans sınırı (varsayılan 3 dk) ve oturum tavanı (5) her tetiği kapsar;
+  ninni çalarken, uygulama arka plandayken ve kaydetme onay penceresi
+  açıkken gösterim atlanır.
+- Ekranın altındaki **sabit banner** ayrı bir iş: tetikleyiciye bağlı değil,
+  her ekranda duruyor (§23.7).

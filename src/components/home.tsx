@@ -155,6 +155,19 @@ const SUBTYPE_LABELS: Record<string, string> = {
   kaka: 'Kaka',
   karisik: 'Çiş + kaka',
   kuru: 'Kuru',
+  /*
+   * İlaç dozu (Modül 16): `subtype` ilacın BİRİMİ.
+   *
+   * Önce biçim (şurup/damla…) taşınıyordu, ama görünüm harmanlama sorunu
+   * yüzünden düz sütunlara indirgenince (migrations/027) birim daha
+   * kullanışlı oldu: kart "Parol Şurup · 4 ml" yazabiliyor.
+   */
+  ml: 'ml',
+  mg: 'mg',
+  damla: 'damla',
+  adet: 'adet',
+  olcek: 'ölçek',
+  doz: 'doz',
 };
 
 export function subtypeLabel(subtype: string | null | undefined): string | undefined {

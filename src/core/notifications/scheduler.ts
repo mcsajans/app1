@@ -397,7 +397,7 @@ function contentOf(
  * (ör. müzik uyku zamanlayıcısı) ileride bildirim planlarsa onu da silerdi.
  * `data.kind` ile yalnızca kendi kayıtlarımız hedeflenir.
  */
-const OUR_KINDS = ['reminder', 'task', 'vaccine'];
+const OUR_KINDS = ['reminder', 'task', 'vaccine', 'medication'];
 
 export async function cancelScheduled(kinds: string[] = OUR_KINDS): Promise<number> {
   const pending = await Notifications.getAllScheduledNotificationsAsync();
@@ -432,6 +432,20 @@ export async function cancelVaccineAlarms(vaccineId: number): Promise<number> {
   const mine = pending.filter(
     (p) => p.content.data?.kind === 'vaccine' && p.content.data?.vaccineId === vaccineId,
   );
+  await Promise.all(mine.map((p) => Notifications.cancelScheduledNotificationAsync(p.identifier)));
+  return mine.length;
+}
+
+/**
+ * İlaç uyarıları (Modül 16).
+ *
+ * Tek kayıt değil, **hepsi** hedeflenir: sıradaki doz son doza bağlı olarak
+ * kayıyor, yani bir doz yazıldığında yalnızca o ilacın değil, aynı ekrandaki
+ * tüm kürlerin planı yeniden hesaplanıyor (`syncMedicationAlarms`).
+ */
+export async function cancelMedicationAlarms(): Promise<number> {
+  const pending = await Notifications.getAllScheduledNotificationsAsync();
+  const mine = pending.filter((p) => p.content.data?.kind === 'medication');
   await Promise.all(mine.map((p) => Notifications.cancelScheduledNotificationAsync(p.identifier)));
   return mine.length;
 }

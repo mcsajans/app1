@@ -54,3 +54,50 @@ Sen kıdemli bir Full-Stack Yazılım Mimarısın. Projemizde Bebek & Çocuk Tak
 2. **Adım 2:** Tamamlanan backend API'lerinin istek/yanıt detaylarını `teknik_dokuman.md` dosyasına kaydet.
 3. **Adım 3:** React Native projesine geç; `pumpingService` modülünü oluştur, sağma kronometresi ve stok takip state'ini kurgula.
 4. **Adım 4:** Sağma kayıt formu, dondurucu süt stoğu widget'ı ve geçmiş listesi UI bileşenlerini geliştirip test et.
+---
+
+## Ek Geliştirme — Ekleme modali ve başlangıç reklamı (2026-11-21)
+
+**"+ Sağma ekle" düğmesi ve alt sayfa.** Miktar formu ekranda sabit
+duruyordu; stok kartı, kronometre ve geçmiş arasında sıkışıyor, sağma biten
+anne miktarı girmek için ekranı tarıyordu. Form artık `PumpingFormSheet`
+içinde ve düğmeyle açılıyor. Kronometreden kalan süre varsa ekranda
+"Ölçülen süre hazır: 03:20" satırı duruyor ve aynı bilgi sayfanın içinde de
+görünüyor — kaydı yazarken `duration_sec` olarak gidiyor.
+
+**"Sağmaya başla" → 3 saniye sonra tam ekran reklam** (`timer_start`
+tetiği, panelden kapatılabilir). Gecikme bu çağrıya özel (`delayMs: 3000`);
+panelin genel değeri 2 saniye. Gerekçe: pompayı kuran kullanıcı telefonu
+bırakıyor, bir saniye fazla bekleme reklamın "tam elden bırakırken" açılma
+olasılığını azaltıyor. Reklam `await` edilmiyor ve hiç `throw` etmiyor —
+sayaç her hâlükârda başlıyor.
+
+**Kayıttan sonra da reklam** (`save` tetiği, `withSaveFeedback`).
+
+Uyku modülündeki sessizlik (`muted`) burada **yok**: sağma sırasında bebeğin
+uyuyor olması gerekmiyor ve sesi kısmak reklam gelirini düşürüyor
+(`TEKNIK_DOKUMAN.md` §23.4).
+
+---
+
+## Reklam davranışı (2026-11-21)
+
+| Eylem | Tetik | Gecikme |
+|-------|-------|---------|
+| "Sağmaya başla" | `timer_start` | **3 sn** |
+| "+ Sağma ekle" → Kaydet | `save` | panel değeri (2 sn) |
+
+Ses kısılmıyor — sağma sırasında bebeğin uyuyor olması gerekmiyor ve sesi
+kısmak reklam gelirini düşürüyor (uyku modülünde tersi geçerli).
+
+Ortak kurallar (ayrıntı: `TEKNIK_DOKUMAN.md` §23):
+
+- Tetikleyici panelden açılıp kapatılır (`/admin/ads`); ana anahtar kapalıyken
+  hiçbir istek atılmaz.
+- Reklam **kayıttan sonra** ve `await` edilmeden çağrılır; hiç `throw` etmez.
+  Kayıt hiçbir koşulda reklamdan etkilenmez.
+- Frekans sınırı (varsayılan 3 dk) ve oturum tavanı (5) her tetiği kapsar;
+  ninni çalarken, uygulama arka plandayken ve kaydetme onay penceresi
+  açıkken gösterim atlanır.
+- Ekranın altındaki **sabit banner** ayrı bir iş: tetikleyiciye bağlı değil,
+  her ekranda duruyor (§23.7).

@@ -38,3 +38,26 @@ Sen kıdemli bir Full-Stack Yazılım Mimarısın. Projemizde Bebek & Çocuk Tak
 2. **Adım 2:** API yanıt şemasını ve parametreleri `teknik_dokuman.md` dosyasına kaydet.
 3. **Adım 3:** React Native projesine geç; `timelineService` katmanını ve tarih bazlı state yapısını kurgula.
 4. **Adım 4:** Tarih şeridi, modül bazlı akış kartları ve kategori filtreleme UI bileşenlerini geliştirip test et.
+
+---
+
+## Reklam davranışı (2026-11-21)
+
+Akış **salt okunur** bir görünüm: kayıt yazmaz, bu yüzden hiçbir tetikleyici
+atmaz. Satıra dokunmak yalnızca özet raporu açar.
+
+Ekranın altındaki sabit banner burada da duruyor ve listenin kullanılabilir
+yüksekliğini daraltıyor (§23.7) — akış kartları banner'ın arkasında
+kalmıyor.
+
+Ortak kurallar (ayrıntı: `TEKNIK_DOKUMAN.md` §23):
+
+- Tetikleyici panelden açılıp kapatılır (`/admin/ads`); ana anahtar kapalıyken
+  hiçbir istek atılmaz.
+- Reklam **kayıttan sonra** ve `await` edilmeden çağrılır; hiç `throw` etmez.
+  Kayıt hiçbir koşulda reklamdan etkilenmez.
+- Frekans sınırı (varsayılan 3 dk) ve oturum tavanı (5) her tetiği kapsar;
+  ninni çalarken, uygulama arka plandayken ve kaydetme onay penceresi
+  açıkken gösterim atlanır.
+- Ekranın altındaki **sabit banner** ayrı bir iş: tetikleyiciye bağlı değil,
+  her ekranda duruyor (§23.7).

@@ -1006,10 +1006,46 @@ hangi hesaba ait olduğunu bilir.
 ve **o hesaba ait yerel ayna silinir** — aynı cihazda başka bir hesap açıldığında
 önceki kullanıcının bebekleri görünmemelidir.
 
-> Şifre sıfırlama uçları (`/auth/forgot-password`, `/auth/reset-password`) sunucuda
-> hazır; mobil ekranı §19'daki ilgili aşamaya bırakıldı. Giriş ekranındaki
-> "Şifremi unuttum" bağlantısı şimdilik yönetim panelinden sıfırlama yapılacağını
-> belirten bir bilgi metni gösterir.
+#### Şifre sıfırlama — güncel akış (2026-11-21)
+
+Mobilde `ForgotPasswordSheet` iki adım: adres → koda + yeni şifre. Sunucu
+tarafı `/auth/forgot-password` ve `/auth/reset-password`.
+
+Bu turda üç değişiklik:
+
+0. **Kod 6 haneli oldu** (`migrations/026`). Önceki 64 karakterlik jeton
+   e-postadan kopyalanıp telefona yapıştırılmak zorundaydı; pratikte
+   yapılamıyordu. Kısa kodun bedeli tahmin edilebilirlik, üç önlemle
+   kapatıldı:
+   - Özet **kullanıcıya bağlı**: `sha256(userId:kod)`. Bu yüzden
+     `/auth/reset-password` artık **e-posta + kod** istiyor; kodun tek
+     başına hangi hesaba ait olduğu bilinmiyor ve bir milyon olasılığın
+     tablosu önceden hesaplanamıyor.
+   - **5 yanlış deneme kodu yakıyor** (`attempt_count`); beşincide satır
+     kullanılmış işaretleniyor ve doğru kod bile çalışmıyor.
+   - **Süre 1 saatten 15 dakikaya** indi.
+   `uq_pr_hash` tekil kısıtı kalktı: iki kullanıcı aynı kodu alabilir ve
+   aynı kullanıcı zamanla aynı kodu iki kez alabilir; kısıt kalsaydı INSERT
+   düşer, kullanıcı "kod gönderilemedi" görürdü.
+
+1. **Yeni şifre iki kez yazılıyor.** Sıfırlama akışında şifre görmediğin bir
+   yerden geliyor; yanlış yazılırsa kullanıcı yeni şifresini bilmeden
+   hesabından kilitlenir ve tek çaresi akışı baştan başlatmaktır. Kayıt ve
+   "şifre değiştir" ekranlarında bu zaten vardı, sıfırlamada yoktu. İki alan
+   birebir aynı olmadan düğme açılmıyor.
+2. **Panelden kod gönderme.** `/admin/users` listesindeki her aktif satırda
+   "Sıfırlama kodu gönder" düğmesi var (`POST /admin/users/:id/send-reset`).
+   Kullanıcı "kod gelmedi" dediğinde destek tarafının elinde somut bir yol
+   olsun diye. Gönderim **beklenir** ve sonucu flash mesajında söylenir —
+   uygulamadaki uçta beklenmiyor, çünkü orada sonucu söylemek "bu e-posta
+   kayıtlı mı" sorusunu yanıtlardı; panelde yönetici zaten biliyor. **Kod
+   panelde gösterilmez**: yöneticinin kullanıcının hesabına girebilmesi
+   gerekmiyor.
+3. **`MAIL_DRY_RUN` görünür oldu.** Açıkken `sendMail` hiçbir şey
+   göndermeden `{ sent: true, reason: 'dry-run' }` dönüyor; "kod gelmedi"
+   şikâyetinin sebebi tam olarak buydu ve panelde hiçbir izi yoktu. Artık
+   `/admin/system` sayfasında e-posta satırı ve açıkken kırmızı bir uyarı
+   var; panelden gönderimde de flash mesajı "GÖNDERİLMEDİ" diyor.
 
 ---
 
@@ -1127,6 +1163,7 @@ Uygulama sahibinin tarayıcıdan girdiği, **ebeveynlere kapalı** operasyon pan
 | **Modüller** | Sistem geneli modül aç/kapa. Değişiklik **tüm kullanıcıların** uygulamasında geçerli olur; `is_core` modüller kapatılamaz (§9) |
 | **Müzik kütüphanesi** | Ninni/beyaz gürültü mp3 yükleme, kategori atama, sıralama, yayından kaldırma |
 | **Sayfalar** | Genel erişime açık içerik sayfaları — gizlilik politikası, iOS ATT metni, kullanım koşulları. Adres, meta başlık ve meta açıklama elle verilir; yayınlanan sayfa `/<slug>` adresinden servis edilir (§7.7) |
+| **Yasal onaylar** | KVKK aydınlatma ve açık rıza tanımları; hangi hesabın hangi onayı ne zaman verdiği (§7.8) |
 | **Reklamlar** | Google AdMob geçiş reklamı ayarları: hesap kimlikleri, frekans sınırı, tetikleyiciler, hedef kitle beyanı, `app-ads.txt` ve yayına çıkış kontrol listesi (§7.6) |
 | **Sistem** | Veritabanı sürümü, migration durumu, disk kullanımı, ortam bilgisi, **proje ve uygulama logosu yükleme** (§7.5) |
 
@@ -1485,6 +1522,72 @@ açıyordu. Yayında sayfa yoksa alan doğrudan Sayfalar ekranına bağlantı ve
 
 ---
 
+### 7.8 Yasal Onaylar (KVKK Aydınlatma ve Açık Rıza)
+
+**Panel:** `/admin/consents` · **Tablolar:** `consents`, `user_consents`
+(`migrations/022`) · **Uçlar:** `GET /consents`, `GET /consents/me`,
+`POST /consents/accept`
+
+Uygulama bebeğe ait **sağlık ve gelişim** verisi tutuyor; bu KVKK'da özel
+nitelikli kişisel veri. İki ayrı beyan toplanıyor ve ikisi hukuken aynı şey
+**değil**:
+
+| Tür (`kind`) | Ne | Geri alınabilir mi |
+|---|---|---|
+| `aydinlatma` | "KVKK Aydınlatma Metni'ni okudum ve anladım." — aydınlatma yükümlülüğünün yerine getirildiğinin beyanı | Hayır; metin değişirse **yenilenir** |
+| `acik_riza` | "Velisi/vasisi olduğum çocuğa ait sağlık ve gelişim verilerinin işlenmesine açık rıza veriyorum." | Evet (KVKK m.7) — `user_consents.withdrawn_at` |
+
+#### Neden `users` üzerinde iki bayrak değil
+
+İspat yükü bizde: onayın **ne zaman**, **hangi metnin hangi sürümü** için,
+hangi IP ve uygulama sürümünden verildiği tutulmak zorunda. Bayrak bunu
+taşıyamaz. Ayrıca yeni bir onay metni eklemek (ör. ticari ileti izni)
+migration değil, panelden satır eklemek olmalı — projenin "sistem geneli
+ayarlar panelden gelir" kuralı.
+
+#### Sürüm mantığı
+
+`consents.version` panelde **Sürümü artır** kutusuyla bir artar.
+`user_consents.version` onayın verildiği andaki sürümü saklar. Kullanıcının
+onayı güncel sürümden eskiyse `GET /consents/me` onu `pending` listesine
+koyar ve uygulama açılışta onay penceresini açar. Yazım düzeltmesi için
+sürüm artırılmaz; metin **esaslı** biçimde değiştiyse artırılır.
+
+#### Uygulamadaki iki yer
+
+- **Kayıt ekranı** — kutucuklar `GET /consents` ile çiziliyor (oturum
+  gerektirmez, hesap henüz yok). İşaretlenen kodlar kayıt isteğinin
+  içinde gider; sunucu zorunlu onaylardan biri eksikse **hesabı hiç
+  açmaz**. İki adıma bölünseydi onayı yarıda bırakan kullanıcı dayanağı
+  olmayan bir hesap bırakırdı.
+- **Açılış** — zorunlu onayı eksik olan kullanıcıya **kapatılamayan**
+  pencere (`src/components/ConsentGate.tsx`). Geri tuşu kapatmaz; tek
+  çıkış onaylamak ya da oturumu kapatmaktır. `PermissionsSheet`ten farkı
+  budur: izinler isteğe bağlı, onaylar değil.
+
+Durum SQLite'a **önbelleklenmez**. Bayat bir yanıtla uygulamayı kilitlemek,
+ağı olmayan kullanıcıyı kendi verisinden kilitlemek demek olurdu: sunucudan
+cevap alınamadıysa `checked` false kalır ve pencere açılmaz.
+
+#### Metin bağlantısı
+
+`consents.page_slug`, metnin yayınlandığı içerik sayfasını (§7.7) gösterir.
+Uç, adresi yalnızca sayfa **gerçekten yayındaysa** döndürür; yayında değilse
+`url: null` gelir ve kutucuk bağlantısız çizilir. Panel bu durumu kırmızı
+uyarıyla gösterir — kullanıcıdan açamadığı bir metin için onay almak
+kabul edilemez.
+
+#### Panel ekranı
+
+Tanımların düzenlendiği kartlar ve "hangi hesap hangi onayı ne zaman verdi"
+tablosu **aynı ekranda**: bir tanımın sürümünü artırmak o anda onaylamış
+görünen herkesi "bekliyor"a çevirir, sayaçları görmeden bu düğmeye basmak
+körlemesine olur. Tablo onay tanımına, duruma (onaylayan / onaylamayan) ve
+ada/e-postaya göre süzülür. Tek kullanıcının geçmişi ayrıca
+`/admin/users/:id` sayfasında.
+
+---
+
 ## 8. REST API Sözleşmesi
 
 **Taban URL:** `<origin>/api/v1` — origin bir **dağıtım ayarıdır**, koda
@@ -1530,7 +1633,10 @@ uç noktaları belirtir.
 |-------|-----|:-------:|----------|
 | GET | `/branding` | — | Proje ve uygulama logosu URL'leri. Giriş ekranında kullanıldığı için açık uçtur (§7.5) |
 | GET | `/ads/config` | — | Reklam ayarları (sistem geneli). Açılışta okunduğu ve sır taşımadığı için açık uçtur (§7.6) |
-| POST | `/auth/register` | — | `{ email, password, full_name }` → kullanıcı + token çifti. Bekleyen davetler yanıtta listelenir. |
+| GET | `/consents` | — | Aktif yasal onay tanımları. Kayıt ekranında, hesap açılmadan gösterildiği için açık uçtur (§7.8) |
+| GET | `/consents/me` | auth | `{ items, pending }` — `pending` boş değilse uygulama kapatılamayan onay penceresini açar (§7.8) |
+| POST | `/consents/accept` | auth | `{ codes[], app_version }` → güncel durum. IP ve kullanıcı aracısı ispat için saklanır (§7.8) |
+| POST | `/auth/register` | — | `{ email, password, full_name, consents[] }` → kullanıcı + token çifti. Zorunlu onaylar eksikse hesap **açılmaz** (§7.8). Bekleyen davetler yanıtta listelenir. |
 | POST | `/auth/login` | — | `{ email, password, device }` → `{ access_token, refresh_token, user }` |
 | POST | `/auth/refresh` | — | `{ refresh_token }` → yeni çift (eski iptal edilir) |
 | POST | `/auth/logout` | auth | Gönderilen refresh token'ı iptal eder |
@@ -1961,6 +2067,66 @@ yanlış yazım ancak kaydetmeye basınca hata olarak dönüyordu.
 
 Paket native kod içerir: eklendikten sonra `npx expo prebuild --platform
 android` ve yeniden derleme gerekir.
+
+### 9.6.1 Düğme sırası: `ButtonRow` (2026-11-21)
+
+Uygulamadaki **tüm** düğme yığınları yan yana dizildi; alt alta duran düğme
+kalmadı. Tek biçim `ButtonRow` (`src/components/ui.tsx`):
+
+```tsx
+<ButtonRow>
+  <Button label="Kaydet" onPress={save} />
+  <Button label="Vazgeç" variant="ghost" onPress={close} />
+</ButtonRow>
+```
+
+Üç kural:
+
+- **Eşit sütunlar.** Her çocuk `flex: 1` bir sütuna girer; `null` çocuklar
+  elenir, böylece `{koşul ? <Button/> : null}` satırda boş sütun bırakmaz.
+- **`compact` otomatik.** Sütun genişliği yarıya (ya da üçte bire) indiğinde
+  16 px kalın etiket taşıyordu; satırdaki düğmeler 14/18'e çekiliyor ve
+  etiket iki satıra sığıyor. Çağıran kendi `compact` değerini geçerek bunu
+  bozabilir.
+- **Satır bir anlam taşır:** yan yana duran düğmeler birbirinin
+  alternatifidir (kaydet/vazgeç, verildi/atla, çal/döngü/durdur). Sıralı bir
+  akış değilse zaten ayrı satırda durmalı.
+
+Dönüşümde iki etiket kısaldı, çünkü üçte bir genişliğe sığmıyordu:
+emzirme panelinde "İki memeyi de emzirdim" → "İkisi de emzirdim". İki düğme
+kartın dışında tek başına duruyordu ve kardeşinin yanına alındı: bebek
+katılma ekranındaki "Vazgeç" ve ninni ekranındaki "Durdur".
+
+### 9.6.2 Ekleme formları alt sayfada (2026-11-21)
+
+Kayıt ekleyen **bütün** modüllerde form artık ekranda sabit durmuyor; bir
+düğmeyle `BottomSheet` içinde açılıyor. Ekranın işi **kayıtları göstermek**:
+
+| Modül | Düğme | Sayfa |
+|-------|-------|-------|
+| Biberon | `+ Biberon ekle` | içerik, miktar + birim, hızlı miktar, süre, not |
+| Ek Gıda | `+ Ek gıda ekle` | `SolidFormSheet` |
+| Bez Değişimi | `+ Bez değişimi ekle` | tür, renk/kıvam, pişik, krem, not |
+| Süt Sağma | `+ Sağma ekle` (**en üstte**) | `PumpingFormSheet` |
+| İlaç Takibi | `+ İlaç ekle` / `Tek seferlik doz` | `MedicationFormSheet`, `DoseSheet` |
+| Hatırlatıcılar | `+ Yeni hatırlatıcı`, `+ Sessiz saat ekle` | aynı form, düzenleme de aynı sayfada |
+| Görevler | `+ Yeni görev` | aynı form, düzenleme de aynı sayfada |
+| Gelişim | `+ Ölçüm ekle` | geçmişten bir satıra dokunmak da bu sayfayı açar |
+| Aile ve Yetkiler | `+ Aileye birini davet et` | e-posta, yakınlık, yetki |
+
+Üç ortak kural:
+
+- **Düğme listenin üstünde.** En sık yapılan iş o; liste uzadıkça aşağı
+  kaymamalı.
+- **Sayfa yalnızca kayıt geçtiyse kapanır.** Sunucu hatasında form açık
+  kalıyor ve hata üstte görünüyor — doldurulan alanlar kaybolmuyor.
+- **Kayıttan sonra reklam.** Hepsi `withSaveFeedback` üzerinden geçtiği için
+  `save` tetiği kendiliğinden atılıyor (davet `invite`, bebek ekleme
+  `baby_switch`). Panelden kapatılabilir (§23.4).
+
+Görevler ve hatırlatıcılarda form **iki yerde** çiziliyordu (yeni kayıt
+listenin altında, düzenleme üstünde) çünkü uzun listede alttaki form ekran
+dışında kalıyordu; modal bu ikiliği tamamen kaldırdı.
 
 ### 9.7 Kabuk: ana ekran ızgarası ve hesap paneli
 
@@ -2564,6 +2730,76 @@ export const format = (ms: number) => {
 - Emzirme bitince kayıt `feedings` (`feed_type='breast'`) + `breastfeeding_sessions` + segmentler olarak **tek transaction'da** yazılır.
 - Manuel düzeltme: bitmiş kayıtta başlangıç/bitiş saati ve her memenin süresi elle düzenlenebilir (`entry_source` `timer` kalır, `note`'a "düzenlendi" işareti eklenir).
 
+### 10.6 Elle Kayıt ve "Geçmişten Başlat" (2026-11-21)
+
+Kronometre, anne onu **çalıştırmayı hatırladığında** doğru veri üretir. Gece
+beslemelerinde hatırlanmıyor; "14:10'da başladı, 14:35'te bitti" bilgisi
+uygulamaya giremiyordu. İki yol eklendi:
+
+| Yol | Uç | Sonuç |
+|-----|-----|-------|
+| Elle kayıt | `POST /babies/{id}/breastfeeding/manual` | Seans doğrudan `completed` doğar |
+| Geçmişten başlat | `POST /babies/{id}/breastfeeding/start` + `at` | Seans geçmiş bir andan açılır, sayaç akar |
+
+**Neden ayrı bir uç.** `/start` durum makinesinin girişidir (§10.1); oraya
+"bitişi de kabul et" eklemek tek ucu hem açan hem kapatan iki anlamlı hâle
+getirirdi.
+
+**Segmentler elle kayıtta da yazılır — zorunlu.** Sol/sağ süreleri
+`breastfeeding_segments` satırlarından `SUM()` ile türetiliyor (§22.1);
+yalnızca `breastfeeding_sessions` sütunlarını doldurmak kaydı geçmiş
+listesinde **"Sol 00:00 · Sağ 00:00"** gösterirdi. Plan `planBreastSegments()`
+ile üretilir (`src/lib/manualEntry.ts`):
+
+```
+dağılım pencereyi dolduruyorsa:   [── sol ──][── sağ ──]
+dolduramıyorsa (mola):            [── sol ──]   ...boşluk...   [── sağ ──]
+```
+
+Boşluk **ortada** bırakılır: elle girişte farkın tek makul karşılığı "arada
+mola verdiler"dir ve `passive_duration_sec` bu farktan türetilir (§10.2.1).
+
+**Aktif/pasif düzeltmesi girişte sorulmaz.** Pencerenin tamamı aktif emme
+kabul edilir (`adjusted_active_sec = NULL`); anne isterse kayıt detayındaki
+mevcut "Aktif süreyi düzelt" aksiyonunu kullanır. Aynı soruyu iki yerde
+sormak, zaten uzun olan formu uzatırdı.
+
+**Doğrulama** (`src/lib/manualEntry.ts`, uykuyla ortak):
+
+| Kural | Değer | Yanıt |
+|-------|-------|-------|
+| Gelecek zaman | +2 dk tolerans (saat kayması) | `422` |
+| En eski başlangıç | 30 gün | `422` |
+| Tek seans süresi | 6 saat (uykuda 24) | `422` |
+| Bitiş ≤ başlangıç | — | `422` |
+| Dağılım toplamı > pencere | — | `422` |
+| Mevcut kayıtla kesişme | uç uca değme serbest | `409` |
+
+422 "gönderdiğin değer tek başına hatalı", 409 "değer geçerli ama mevcut
+veriyle çelişiyor" demektir; istemci ikincisini "o saatlerde zaten bir kayıt
+var" diye gösterir. Açık uçlu (çalışan) kayıtlar kesişim hesabında **şu ana
+kadar sürüyor** sayılır.
+
+**Mobil taraf.** `ManualSessionSheet` elle kaydın tek sayfasıdır. Anneden
+dakika hesabı istenmez: "Sol / Sağ / İkisi de" seçilir, "ikisi de"de pencere
+tek bir kaydırıcıyla paylaştırılır. Aynı kurallar istemcide de var
+(`src/core/records/manualWindow.ts`) — yalnızca anında geri bildirim için;
+son söz sunucunundur.
+
+**Geçmişten başlatma sayfada değil, sayacın kendi ekranındadır** (2026-11-21).
+Modüle girince yalnızca iki meme kutusu görünür; taraf seçilince sayaç 00:00'da
+bekler ve orada bir not alanı ile "Sayacı önceki bir zamandan başlat" kutucuğu
+vardır. Kutucuk yalnızca **saat** sorar (tarih değil): geri gidilen süre zaten
+en fazla 6 saat, ileri kalan bir saat ise düne sayılır — `momentFromClock()`.
+Taraf ikinci kez sorulmadığı için eski "geçmişten başlat" alt sayfası kaldırıldı.
+Sayaç akarken ekranda yalnızca **karşı** tarafın "geç" düğmesi durur.
+
+Taraf seçildikten sonraki ekran **iki sekmelidir** (`IconTabs`): *Anlık*
+sayacı başlatır (açık seans), *Geri tarihli* başlangıç + bitiş alıp doğrudan
+tamamlanmış kayıt yazar (`POST …/breastfeeding/manual`). Not alanı iki
+sekmede ortaktır. Süre paylaştırmalı "ikisi de" hâli ayrı alt sayfada kalır;
+sekmenin altındaki düğme orayı "İkisi de" seçili açar.
+
 ---
 
 ## 11. Uyku Takibi
@@ -2574,6 +2810,60 @@ export const format = (ms: number) => {
 - Aktif uyku kaydı varken `quiet_hours.auto_from_sleep = 1` ise hatırlatıcılar otomatik olarak sessize alınır/ertelenir (bkz. §12.3).
 - Uyanma sayacı: uyku kaydı açıkken "+1 uyandı" butonu `wake_count`'u artırır.
 - Günlük özet: toplam uyku, en uzun kesintisiz uyku, şekerleme sayısı, uyanma sayısı.
+
+### 11.1 Elle Kayıt ve "Geçmişten Başlat" (2026-11-21)
+
+Yukarıdaki "manuel mod" maddesi ilk sürümde **uygulanmamıştı**: ekran yalnızca
+`sleep/start` ve `sleep/{id}/stop` çağırıyordu, `POST /babies/{id}/sleep` ucu
+ve `sleepService.create()` istemci fonksiyonu varken hiçbir yerden
+çağrılmıyordu. Arayüz eklendi; eklenirken sunucudaki üç boşluk kapatıldı.
+
+| Yol | Uç | Sonuç |
+|-----|-----|-------|
+| Elle kayıt | `POST /babies/{id}/sleep` (`started_at` + `ended_at`) | `completed`, `entry_source='manual'` |
+| Geçmişten başlat | `POST /babies/{id}/sleep/start` + `started_at` | `running`, sayaç geçmiş andan akar |
+
+**Kapatılan boşluklar.**
+
+1. **Gelecek zaman serbestti.** `started_at: 2027-01-01` kabul ediliyordu.
+   Kronometrede imkânsızdı (zaman hep `Date.now()`), elle girişte bir tarih
+   seçici kazası yeterli; uyanıklık penceresi ve günlük özet kalıcı bozulurdu.
+2. **Çakışma denetimi yoktu.** Aynı aralık iki kez girilebiliyor, günlük
+   toplam sessizce şişiyordu (24 saati aşan "toplam uyku" mümkün).
+3. **İkinci bir `running` kayıt açılabiliyordu.** `POST /sleep` gövdesinde
+   `ended_at` yoksa kayıt `running` doğar ve `/sleep/start` ucundaki "zaten
+   çalışan kayıt var" denetimini **atlardı**. Ekran tek çalışan kayıt varsayar
+   (`records.find(...)`): ikincisi görünmez olur, "Uyandı" yanlış kaydı
+   kapatırdı. Artık `409`.
+
+Sınırlar §10.6'daki tabloyla aynıdır; tek fark tek kayıt süresinin tavanı:
+uykuda **24 saat**.
+
+**`PUT /sleep/{id}` artık süreyi yeniden türetiyor.** `ended_at` değiştirilen
+kayıt listede yeni saatlerle görünürken `duration_sec` eski değerinde
+kalıyordu — §22.0.1'de kayıt *oluşturmada* kapatılan boşluğun *güncellemedeki*
+ikizi. Besleme kayıtlarına bilerek dokunulmadı: emzirmede `duration_sec`
+bitiş − başlangıç değil, "aktif emme" süresidir (§10.2.1) ve zamandan
+türetmek annenin düzeltmesini ezerdi.
+
+**`sleep_type` önerisi uygulandı.** Başlangıç 19:00–05:00 arasındaysa tip
+`night`'a çekilir; kullanıcı tipi elle değiştirdiyse öneri bir daha devreye
+girmez.
+
+**Gece yarısını aşan kayıt.** Yukarıdaki "tarih otomatik +1 gün" maddesi
+yerine **bitiş için ayrı tarih alanı** sunuldu. Otomatik +1 gün sessiz bir
+varsayımdır: 23:00→07:00 kaydında doğru, 23:00→yanlışlıkla 22:00 yazılan
+kayıtta ise 23 saatlik bir uyku üretirdi. Tarih görünür durur, yanlışlık
+görünür olur.
+
+**Ekran düzeni (güncelleme).** "Geçmişten başlat" artık ayrı bir alt sayfa
+değil: boştaki kart emzirmedeki (§10.6) **iki sekmeli** düzeni kullanıyor —
+*Anlık* (sayaç; kutucukla birkaç saat geriden başlatılabilir, yalnızca saat
+sorulur) ve *Geri tarihli* (başlangıç + bitiş + kalite + not → tamamlanmış
+kayıt). Uyku tipi sekmelerin üstünde, iki biçimde de ortak. `ManualSleepSheet`
+tek modlu kaldı ve yalnızca **sayaç akarken** açılıyor.
+`POST /babies/{id}/sleep/start` artık isteğe bağlı `note` (≤500) kabul edip
+`sleep_records.note` sütununa yazıyor.
 
 ---
 
@@ -4015,7 +4305,7 @@ Uygulama içi "Verileri yedekle" → `GET /sync/pull?since=0` çıktısını JSO
 
 ---
 
-## 22. Modül API Sözleşmeleri (Modül 2–15 ve Bildirim Merkezi)
+## 22. Modül API Sözleşmeleri (Modül 2–16 ve Bildirim Merkezi)
 
 `modules_doc/` altındaki şartnamelerin uygulanmış hâli. Şartnameden bilinçli
 sapmalar ve eksik şartnameler **`modules_doc/NOTLAR-ve-EKSIKLER.md`** dosyasındadır.
@@ -4137,7 +4427,8 @@ bir segment düzenlendiğinde toplam sessizce tutarsızlaşırdı.
 | GET | `/babies/{id}/breastfeeding` | viewer — `?from=&to=&limit=` |
 | GET | `/babies/{id}/breastfeeding/last` | viewer |
 | GET | `/babies/{id}/breastfeeding/active` | viewer |
-| POST | `/babies/{id}/breastfeeding/start` | editor |
+| POST | `/babies/{id}/breastfeeding/start` | editor — `at` ile geçmiş bir andan başlatılabilir, `note` ile seans notu (§10.6) |
+| POST | `/babies/{id}/breastfeeding/manual` | editor — elle kayıt: `started_at` + `ended_at` (§10.6) |
 | POST | `/babies/{id}/breastfeeding/{sessionId}/switch` · `/pause` · `/resume` · `/stop` | editor¹ |
 
 ```jsonc
@@ -4154,8 +4445,27 @@ bir segment düzenlendiğinde toplam sessizce tutarsızlaşırdı.
 }
 ```
 
-`last` ucu **çalışan seansı da** döndürür; kronometre yarıdayken de ekranın
-üstündeki "sağdan devam" rozeti doğru taraf gösterir.
+`last` ucu **çalışan seansı da** döndürür; kronometre yarıdayken de ekran
+doğru tarafı gösterir. Yanıtın yalnızca `next_side` alanı çiziliyor (taraf
+kutusundaki "sırada" rozeti); eskiden üstte duran "Son: Sol / Sırada: Sağ"
+kartı 2026-11-21'de kaldırıldı — son emzirmenin saati ve süresi zaten hemen
+altındaki geçmiş listesinin ilk satırı.
+
+```jsonc
+// POST /babies/3/breastfeeding/manual
+{
+  "started_at": "2026-11-21T11:00:00.000Z",
+  "ended_at":   "2026-11-21T11:25:00.000Z",
+  "left_sec": 900, "right_sec": 600,   // isteğe bağlı; yoksa pencere first_side'a yazılır
+  "first_side": "left",
+  "note": "Gece beslemesi"
+}
+// → 201, /active ile aynı gövde: segmentler, süreler, next_side
+```
+
+Elle kayıt da **gerçek zaman damgalı segmentler** yazar; aksi hâlde geçmiş
+listesi süreleri segmentlerden topladığı için kayıt "Sol 00:00 · Sağ 00:00"
+görünürdü. Doğrulama ve çakışma kuralları §10.6'dadır.
 
 ### 22.2 Modül 4 — Ek Gıda (`solid`)
 
@@ -4194,8 +4504,8 @@ Eklenen alan: `wake_reason` (serbest metin — şartnamede kapalı liste yok).
 
 | Metod | Yol | Gerekli |
 |-------|-----|---------|
-| GET/POST | `/babies/{id}/sleep` | viewer / editor |
-| POST | `/babies/{id}/sleep/start` | editor — canlı sayaç |
+| GET/POST | `/babies/{id}/sleep` | viewer / editor — POST elle kayıt da yazar (§11.1) |
+| POST | `/babies/{id}/sleep/start` | editor — canlı sayaç; `started_at` ile geçmişten, `note` ile kayıt notu (§11.1) |
 | POST | `/sleep/{id}/stop` | editor¹ |
 | GET | `/babies/{id}/sleep/daily-summary?date=` | viewer |
 | PUT/DELETE | `/sleep/{id}` | editor¹ |
@@ -4221,6 +4531,11 @@ Gün sınırı kaydın kendi `tz_offset_min` değerine göre belirlenir; UTC'ye 
 bölmek gece 03:00'teki uykuyu bir önceki güne yazardı.
 
 Hata: bitiş başlangıçtan önceyse veya kayıt zaten kapalıysa `422`.
+
+**Elle girilen zaman** ayrıca doğrulanır (§11.1): gelecek tarih ve 30 günden
+eski başlangıç `422`, mevcut bir uykuyla kesişme `409`, `ended_at` verilmeden
+ikinci bir kayıt açma denemesi `409`. `PUT /sleep/{id}` zaman alanları
+değiştiğinde `duration_sec` ve `status` değerlerini yeniden türetir.
 
 ### 22.4 Modül 6 — Bez Değişimi (`diaper`)
 
@@ -5572,6 +5887,140 @@ dört doğrulama kuralı).
 
 ---
 
+
+### 22.12.1 Eksik aşı hatırlatması (2026-11-21)
+
+`POST /babies/{id}/vaccines/remind-missing` — viewer yeter. Gövde yalnızca
+`tz_offset_min`; yanıt `{ notified, reason, missing }`.
+
+Planlanan günü geçmiş ve hâlâ `pending` olan aşılar varsa **bildirim
+merkezine** bir satır yazar (tip `vaccine`, hedef ekran `vaccines`).
+Koşullar: bebek 30 günden büyük **ya da** profil son 7 günde eklenmiş;
+tekrar koruması aynı kullanıcı + bebek için **24 saat**.
+
+`reason` değerleri: `created`, `recent` (24 saat içinde zaten yazılmış),
+`none` (girilmemiş aşı yok), `too_young`.
+
+Çağıran ana sayfadır (`HomeScreen`): oturum başına bebek başına bir kez,
+sessizce. "Bugün" cihazın saat diliminde anlamlı olduğu için karar
+istemcinin gönderdiği `tz_offset_min` ile veriliyor; her gece çalışan bir
+zamanlanmış iş, çalışmadığı gün hiçbir şey yapmazdı.
+
+Yeni yardımcı: `notifyUser()` (`src/services/notifications.ts`).
+`notifyFamily` bir OLAYI haber verir ve olayı yapanı listeden çıkarır;
+burada haber verilecek olay yok — sistem kullanıcıya kendi verisine bakıp
+söylüyor. Bu yüzden satır **tek kullanıcıya** yazılıyor ve `actor_user_id`
+NULL kalıyor. Tekrar koruması `dedupeHours` + **başlık** eşleşmesiyle; tabloya
+yalnızca bu özellik için sütun eklemek yerine çağıranın sabit tuttuğu metin
+anahtar olarak kullanılıyor.
+
+### 22.16 Modül 16 — İlaç Takibi (`medication`)
+
+Göç: `migrations/023_medication.sql`. Analiz ve tasarım kararları:
+`modules_doc/ilac-takibi.md`. İki tablo: **kür** (`medications`) biter,
+**doz** (`medication_doses`) kalır.
+
+| Metod | Yol | Gerekli |
+|-------|-----|---------|
+| GET | `/babies/{id}/medications` | viewer — `?status=active\|finished\|stopped\|all` |
+| GET | `/babies/{id}/medications/due` | viewer — bildirim planlayıcısının özeti |
+| POST | `/babies/{id}/medications` | editor |
+| GET/PUT/DELETE | `/medications/{id}` | viewer / editor / editor |
+| POST | `/medications/{id}/finish` | editor — `status: finished\|stopped` |
+| GET | `/babies/{id}/medication-doses` | viewer — `?medication_id=&from=&to=&limit=` |
+| POST | `/babies/{id}/medication-doses` | editor |
+| PUT/DELETE | `/medication-doses/{id}` | editor |
+
+#### Bu modülde **409 yoktur**
+
+Uyku ve emzirmede çakışan kayıt veriyi bozar (günlük toplam şişer) ve `409`
+ile reddedilir. Burada çakışma **gerçeğin kendisidir**: minimum aralıktan
+önce verilen doz, hatalı bir giriş değil, olmuş bir olaydır. Kaydı reddetmek
+ilacı geri almaz; yalnızca bir sonraki dozu hesaplayan tek veriyi yok eder.
+
+Bu yüzden `POST /medication-doses` erken dozu **kabul eder**, satıra
+`is_early = 1` yazar ve yanıtta `warnings: string[]` döndürür. Üç uyarı
+üretilebilir: minimum aralık ihlali, günlük doz sınırı, kür bitişinden sonra
+verilen doz. Mobil taraf bunları hata kutusunda değil, **ayrı sarı kutuda**
+gösterir ve altına "Kayıt yine de alındı" yazar.
+
+`422` yine var ama yalnızca değerin **kendi başına** geçersiz olduğu yerde:
+gelecek zaman (120 sn tolerans), 48 saatten eski doz, sıfır/negatif miktar,
+sabit saatli programda saat verilmemesi.
+
+#### Uygulama doz ÖNERMEZ
+
+`default_amount` ebeveynin bir kez yazdığı değerdir; sunucuda hiçbir yerde
+mg/kg hesabı yoktur ve `strength` ("120 mg/5 ml") serbest metindir,
+ayrıştırılmaz. Hesaplanan tek şey **zamandır** (`nextDueAt`). Gerekçe tıbbi
+tavsiye sınırı: doz öneren bir uygulama başka bir ürün kategorisidir.
+
+#### Program üç biçim
+
+| `schedule_type` | Sıradaki doz |
+|-----------------|--------------|
+| `as_needed` | hesaplanmaz (yalnızca `min_interval_hours` uyarısı) |
+| `interval` | son doz + `interval_hours`; hiç doz yoksa "şimdi" |
+| `fixed_times` | kullanıcının **yerel** gününde kalan ilk saat, yoksa yarının ilki |
+
+Hesap saf bir dosyada: `src/lib/medication.ts` (`nextDueAt`, `earlyWarning`,
+`dailyLimitWarning`, `assertDoseMoment`, `assertSchedule`, `localDay`), 27
+vitest testiyle (`medication.test.ts`). Sabit saatte yerel gün kaydırması
+(sunucu UTC, kullanıcı UTC+3) testlerde ayrıca kilitli — kaymanın en kolay
+girdiği yer orası.
+
+#### Kür silinse de dozlar kalır
+
+`medication_doses.medication_id` yabancı anahtarı `ON DELETE SET NULL`, ama
+silme zaten yumuşak. Her doz satırı ayrıca `name_snapshot` taşır: ilacın adı
+sonradan değişse de geçmiş satır o günkü adı gösterir. Kür tanımı olmadan da
+doz yazılabilir (`medication_id = NULL` + `name`) — en telaşlı anda dört
+alanlı bir form açtırmamak için.
+
+#### Günlük akış ve panel
+
+`v_timeline` görünümüne `kind = 'medication'` satırları eklendi: `subtype`
+ilacın biçimi, `note` ise "ad · doz (· atlandı)" özeti. Görünümdeki dizgi
+ifadeleri `COLLATE utf8mb4_unicode_ci` ile sabitlendi — sabitler bağlantının
+harmanlamasını alıyor ve UNION "Illegal mix of collations" diyordu.
+Yönetim panelinde **içerik gösterilmez**, yalnızca toplam doz sayısı
+(sağlık verisi, `ilac-takibi.md` §3j).
+
+#### Reklam gösterilmez
+
+`withSaveFeedback()` artık `adTrigger` olarak `null` kabul ediyor ve ilaç
+ekranı bunu kullanıyor: doz kaydının ardından ekranı kaplayan bir reklam,
+ilacı verirken telefona bakan ebeveyni en kötü anda dışarı atardı; sağlık
+bağlamında reklam göstermek mağaza politikası açısından da tartışmalı.
+Kaydetme onay penceresi çalışmaya devam eder.
+
+#### Mobil taraf
+
+`src/modules/medication/`: `MedicationScreen` (aktif kürler + tek dokunuşluk
+"Verildi", doz geçmişi, biten kürler), `DoseSheet` (Anlık / Geri tarihli
+sekmeleri — emzirme ve uykudaki düzenin aynısı), `MedicationFormSheet` (kür
+tanımı), `labels.ts` (etiketler ve metin biçimleri). Katalog anahtarı
+`medication`, varsayılanı **kapalı** (`default_on = 0`): her bebek ilaç
+kullanmıyor.
+
+## 22.17 Yayın (Android) — nereye bakılır
+
+Yayın adımlarının tamamı **`modules_doc/yayina-cikis-android.md`** dosyasında:
+sunucu göçleri, panel ayarları, EAS derlemesi, Play Console beyanları ve
+yayın sonrası kontrol listesi.
+
+Kodu ilgilendiren iki nokta burada kalsın:
+
+- **Sürüm tek kaynaktan.** `APP_VERSION` artık `app.json`'daki `version`
+  alanından okunuyor (`expo-constants`); hesap panelindeki satır, cihaz
+  kaydı ve onay kaydı aynı numarayı taşıyor. `versionCode` ise EAS
+  tarafından otomatik artırılıyor (`eas.json` → `autoIncrement`,
+  `appVersionSource: "local"`).
+- **Yayın adresi derlemeden gelir.** `EXPO_PUBLIC_API_URL` yalnızca
+  `eas.json` → `build.<profil>.env` içinde tanımlı; `.env.local`
+  `.gitignore`'da olduğu için EAS derlemesine karışmıyor. Adres verilmezse
+  uygulama yerel sunucuyu gösterir ve konsola uyarı yazar (§8).
+
 ## 23. Reklam Entegrasyonu — AdMob Geçiş Reklamı
 
 `modules_doc/Reklam.md` şartnamesinin uygulanmış hâli. **Ayarların tamamı
@@ -5723,7 +6172,7 @@ istek atmak, en kötü anda — bebek uyurken — gecikme ve veri harcaması olu
 
 ### 23.4 Tetikleyiciler
 
-Dört tetikleyici türü var ve her biri panelde **ayrı** açılıp kapatılıyor
+Beş tetikleyici türü var ve her biri panelde **ayrı** açılıp kapatılıyor
 (§7.6). `withSaveFeedback` varsayılan olarak `'save'` gönderiyor.
 
 | Tetik | Nereden | Panel varsayılanı |
@@ -5731,7 +6180,8 @@ Dört tetikleyici türü var ve her biri panelde **ayrı** açılıp kapatılıy
 | `save` | `withSaveFeedback()` — **14 ekranın tamamı** | açık |
 | `complete` | `TasksScreen.complete()` (üç dal) + aşı "yapıldı" akışı | açık |
 | `invite` | `FamilyScreen` davet oluşturma | açık |
-| `timer_start` | `SleepScreen.onStart()`, `BreastfeedingScreen.onStart/onSwitch` | **kapalı** |
+| `timer_start` | `SleepScreen.onStart()`, `BreastfeedingScreen.onStart()`, `PumpingScreen` "Sağmaya başla" | **açık** (2026-11-21) |
+| `baby_switch` | `BabiesScreen` — bebek değişimi, yeni bebek, paylaşım koduyla katılma | açık (025) |
 
 "Kaydet" ve "Değişiklikleri Kaydet" düğmelerinin tamamı zaten tek bir
 sarmalayıcıdan geçiyordu (`withSaveFeedback`), bu yüzden 14 ekran tek satırla
@@ -5745,11 +6195,77 @@ hata veren bir kaydın üstüne reklam açmak kullanıcıyı hatayı okumadan
 ekrandan atmak olurdu; `succeed`ten önce çağırmak ise gecikme dolduğunda onay
 penceresini hâlâ açık görüp gösterimi sessizce atlamak olurdu.
 
-`timer_start`ın varsayılan kapalı olması bilinçli (Reklam.md §0.3-C): geçiş
-reklamı doğal **bitiş** noktalarına ait, Sol/Sağ ve "Uykuya daldı" ise işi
-**başlatma** anı. Emzirmede bu düğmeler tek beslenmede 3-4 kez basılıyor ve
-sayaç akarken ekranı kapatan reklam ölçülen sürenin doğruluğuna da gölge
-düşürüyor. Panelden açılabilir; o zaman tek emniyet frekans sınırı olur.
+**`timer_start` 2026-11-21'de açıldı** (ürün kararı): emzirme başlatıldıktan
+**2 saniye** sonra tam ekran reklam gösteriliyor. Gecikme yine panelden
+geliyor — `action_delay_ms` 3000'den **2000**'e çekildi ve bu değer diğer
+tetikleyicileri de kapsıyor.
+
+Tetik artık yalnızca sayacın **başladığı** anda atılıyor:
+`BreastfeedingScreen.onSwitch` (Sola/Sağa geç) çağrıyı bıraktı. Gerekçe
+Reklam.md §0.3-C'nin yarısı hâlâ geçerli: taraf değiştirmek emzirmenin
+ortasında bir an ve orada açılan tam ekran reklam hem ölçülen süreyi
+gölgeler hem de bebeği kucağında tutan anneyi uygulamadan atar. Başlatma
+anında ise kullanıcı zaten telefonu eline almış durumda.
+
+Üst üste gelen gösterimleri panelin frekans sınırı (`frequency_minutes`,
+varsayılan 3 dk) ve oturum tavanı (`session_cap`, 5) eliyor; ninni çalarken
+ve sessiz saatte (açıksa) yine hiç gösterilmiyor.
+
+#### Modüle özgü sapmalar: `AdOptions` (2026-11-21)
+
+`showAdAfterAction(trigger, opts?)` iki alanlık isteğe bağlı bir nesne
+alıyor; `withSaveFeedback(fn, message?, trigger?, adOptions?)` aynısını
+geçiriyor.
+
+| Alan | Etkisi | Kullanan |
+|------|--------|----------|
+| `delayMs` | Panelin `action_delay_ms` değerini **bu çağrı için** geçersiz kılar | Uyku modülü: 3000 ms |
+| `muted` | Reklam **sesi kapalı** açılır (`MobileAds().setAppMuted`) | Uyku modülü |
+
+Sınır nerede: `opts` yalnızca gecikme ve sesi değiştirebilir. Birim
+kimlikleri, frekans sınırı, oturum tavanı, tetikleyici anahtarları ve
+beyanlar **her zaman** panelden gelir — "adService içine sabit sayı yazma"
+kuralı bu yüzden bozulmuş sayılmaz: değişen şey sistem ayarı değil, tek bir
+ekranın o çağrıdaki davranışı.
+
+#### `baby_switch` — bebek değişimi ve ekleme (2026-11-21, göç 025)
+
+Üç yerden atılıyor: listeden **başka** bir bebeğe dokunmak
+(`BabiesScreen.openBaby`), **yeni bebek** kaydetmek (`BabyForm`, yalnızca
+oluşturmada — düzenlemede `save` kalıyor) ve **paylaşım koduyla katılmak**
+(`BabiesScreen.join`).
+
+İki yerde bilerek atılmıyor:
+
+- **Zaten aktif olan bebeğe dokunmak.** Bu bir değişim değil, ana sayfaya
+  kısayol; tek bebeği olan kullanıcıya her dokunuşta reklam açmak olurdu.
+- **"Düzenle" düğmesi.** İç içe `Pressable` dokunuşu kendi alıyor, dıştaki
+  satır hiç çalışmıyor: ne bebek değişiyor, ne ana sayfaya gidiliyor, ne de
+  reklam açılıyor.
+
+Ayrı bir anahtar olmasının sebebi diğerleriyle aynı: `save` tetiğine
+bindirilseydi "kayıtlarda reklam istemiyorum ama bebek değişiminde
+istiyorum" ayarı mümkün olmazdı.
+
+**Uyku modülü (`SLEEP_AD = { delayMs: 3000, muted: true }`)** üç yerde
+kullanıyor: "Uykuya daldı" (`timer_start`), elle uyku kaydı ve "Uyandı"
+(ikisi de `save`). Gerekçe: bebeği uyutmaya çalışırken açılan **sesli** bir
+reklam modülün bütün amacını bozar; ninni çalarken reklam zaten hiç
+gösterilmiyor ama ninni kapalıyken de uyku ortamı sessiz olmalı.
+
+**Sağma modülü** yalnızca gecikmeyi değiştiriyor: "Sağmaya başla"
+`{ delayMs: 3000 }` ile çağırıyor (pompayı kurup telefonu bırakan
+kullanıcıya panelin 2 saniyesi kısa geliyor). Ses kısılmıyor — sağma
+sırasında bebeğin uyuyor olması gerekmiyor ve sesi kısmak geliri düşürüyor.
+Kayıt tarafı (`+ Sağma ekle` → Kaydet) panelin kendi `save` değerlerini
+kullanıyor.
+
+Ses **genel** bir SDK ayarı (`setAppMuted`), bu yüzden `adService` onu
+gösterimden hemen önce kapatıp `CLOSED` olayında (ve gösterim hata verirse
+`catch` içinde) geri açıyor — yoksa uyku modülünde kapatılan ses, bir
+sonraki modülün reklamında da kapalı kalırdı. Google'ın uyarısı kayıt
+altında: sesi kısmak video reklam uygunluğunu ve dolayısıyla geliri
+düşürebiliyor; bu yüzden genel değil, yalnızca bu modülde.
 
 ### 23.5 `withSaveFeedback` neden ayrı dosyada
 
@@ -5774,7 +6290,7 @@ withSaveFeedback       → ikisi
 
 ### 23.6 Kapsam dışı
 
-- **Banner ve ödüllü reklam yok.** Şartname yalnızca geçiş reklamı istiyor.
+- **Ödüllü reklam yok.** (Banner 2026-11-21'de eklendi, bkz. §23.7.)
 - **Mediation (AdMob dışı ağlar) yok.** Tek ağ ile başlanıyor.
 - **Reklamsız satın alma akışı yok.** Panelin `ads_enabled` anahtarı sistem
   geneli bir kapı; kullanıcı başına reklam kaldırma ayrı bir iş
@@ -5783,7 +6299,74 @@ withSaveFeedback       → ikisi
 - **iOS derlemesi yok.** Bu makinede iOS derlenemiyor; `iosAppId` ve ATT
   metni yapılandırıldı ama doğrulanmadı (Reklam.md §0.3-F: önce Android).
 
-### 23.7 Emülatörde doğrulama — **yapıldı (5 Kasım 2026)**
+### 23.7 Sabit alt banner (2026-11-21)
+
+Geçiş reklamının yanına, ekranın **en altında sürekli duran** bir banner
+eklendi. Göç: `migrations/024_ad_banner.sql` (`banner_enabled`,
+`android_banner_id`, `ios_banner_id`); panelde kendi onay kutusu ve iki birim
+alanı var, `GET /ads/config` `banner_enabled` + `banner.{android,ios}`
+döndürüyor.
+
+#### Yer kaplar, üzerine binmez
+
+Çubuk kabukta (`App.tsx`), alt gezinme çubuğunun **altında** duruyor:
+
+```
+┌───────────────────────────────┐
+│  ekran içeriği                │  ← Screen: insets.bottom + NAV_SPACE + banner
+├───────────────────────────────┤
+│  alt gezinme çubuğu           │  ← bottom: bannerHeight + insets.bottom
+├───────────────────────────────┤
+│  banner  (+ güvenli alan)     │  ← position: absolute, bottom: 0
+└───────────────────────────────┘
+```
+
+Yükseklik **ölçülüyor**, sabit yazılmıyor: `AdBannerBar` iç kabının
+`onLayout` değerini `useBannerStore`a koyuyor, kabuk da bunu
+`BottomNavSpaceContext`e ekliyor. Çapalı uyarlanabilir banner
+(`ANCHORED_ADAPTIVE_BANNER`) cihaz genişliğine göre farklı yükseklik
+döndürdüğü için sabit bir sayı er geç yanlış olurdu. Ölçüm güvenli alanı
+**içermez** (`Screen` onu zaten ekliyor), çubuğun kendi dolgusu karşılar.
+
+Reklamın içeriğin üzerine binmesi yalnızca estetik bir sorun değil: altta
+kalan düğmeye basmaya çalışan parmak reklama denk gelir ve bu AdMob'un
+"accidental click" ihlali.
+
+#### Kapatma kalıcı değil
+
+"×" çubuğu kapatıyor, yerinde "Reklamı göster" şeridi kalıyor. Her ekran
+değişiminde `NavigationContainer.onStateChange` içinden
+`useBannerStore.reopen()` çağrılıyor ve banner geri geliyor — ürün kararı bu
+(istek: "kapatılabilsin ama her ekran değişiminde yeniden açılsın").
+`reopen()` aynı zamanda **başarısız yüklemeyi** de yeniden deniyor: `seq`
+artıyor, `BannerAd` yeni bir `key` ile bağlanıp yeni istek atıyor. Yoksa tek
+bir başarısız istek banner'ı oturum boyunca kapatırdı.
+
+Yüklenemeyen reklam **yer kaplamaz**: `failed` durumunda çubuk hiç
+çizilmiyor, gezinme çubuğu aşağı iniyor. Boş bir şerit bırakmak hem çirkin
+hem de kullanılabilir alanı sebepsiz yiyen bir seçim olurdu.
+
+#### Tetikleyiciye bağlı değil
+
+Banner `showAdAfterAction` yolundan geçmez: frekans sınırı, oturum tavanı ve
+tetikleyici anahtarları **geçiş reklamına** aittir. Tazeleme AdMob
+konsolundan birim ayarıyla yönetiliyor; istemcide tazeleme sayısı yok.
+Panelde de ayrı doğrulama var: banner açık + canlı kimlikler seçiliyse en az
+bir banner birimi zorunlu, ve "reklam açık ama hiç tetikleyici yok" hatası
+banner açıkken verilmiyor (banner tetikleyici istemiyor).
+
+Test kimlikleri açıkken `TestIds.BANNER` kullanılıyor. Test reklamları sabit
+boyutlu geldiği için (320x50, 320x100) uyarlanabilir alanın kalanı siyah
+kalabiliyor; canlı reklamlarda istenen boyutta creative dönüyor.
+
+### 23.7.1 Modül dosyalarındaki karşılığı
+
+`modules_doc/` altındaki **her** modül dosyasında "Reklam davranışı" başlıklı
+bir bölüm var: o modülün hangi eyleminin hangi tetiği attığı, sapmalar
+(gecikme/ses) ve reklam **atmayan** eylemler. Özet tablo
+`modules_doc/Reklam.md` sonundaki "Uygulanan hâl" bölümünde.
+
+### 23.8 Emülatörde doğrulama — **yapıldı (5 Kasım 2026)**
 
 Android 16 (API 37) emülatöründe, panelde reklam **açık** + "test kimlikleri"
 **açık** iken uçtan uca sürüldü. Sonuçlar:

@@ -64,3 +64,59 @@ Sen kıdemli bir Full-Stack Yazılım Mimarısın. Projemizde Bebek & Çocuk Tak
 4. **Adım 4:** Profil oluşturma, listeleme ve aktif profil seçme React Native UI bileşenlerini geliştir ve test et.
 
 Sırasıyla bu adımları takip ederek geliştirmeye başla.
+---
+
+## Ek Geliştirme — Profile dokununca ana sayfa + reklam (2026-11-21)
+
+**Listeden bir bebeğe dokunmak artık o bebeğin ana sayfasına götürüyor.**
+Önceden yalnızca aktif bebeği değiştiriyor, kullanıcı aynı listede kalıyordu:
+"seçtim de ne oldu?" sorusunun cevabı ekranda yoktu. Bebek değişiminin asıl
+karşılığı o bebeğin ana sayfası — anlık durum kartları, modül ızgarası ve
+günlük akış zaten orada. Yönlendirme `navigateTo('home')` ile yapılıyor
+(ekran navigasyon ağacının içinde ama hedef kök ekran).
+
+**Tam ekran reklam** üç yerde gösteriliyor (`baby_switch` tetiği, panelden
+ayrı açılıp kapatılabiliyor — `migrations/025`, `TEKNIK_DOKUMAN.md` §23.4):
+
+| Eylem | Reklam |
+|-------|--------|
+| Listeden **başka** bir bebeğe geçmek | evet |
+| **Yeni bebek** kaydetmek | evet |
+| **Paylaşım koduyla** katılmak | evet |
+| Zaten **aktif** bebeğe dokunmak | hayır — bu bir değişim değil, ana sayfaya kısayol |
+| **Düzenle** düğmesi | hayır |
+| Düzenlemeyi **kaydetmek** | `save` tetiği (değişmedi) |
+
+"Düzenle" iç içe bir `Pressable`: dokunuşu kendisi alıyor, dıştaki satır hiç
+çalışmıyor. Yani düzenlemeye girerken ne aktif bebek değişiyor, ne ana
+sayfaya gidiliyor, ne de reklam açılıyor.
+
+Seçim sunucuya da yazıldığı için (`baby_members.is_selected`) ağ hatası
+olursa yönlendirme yapılmıyor; hata listenin üstünde gösteriliyor.
+
+---
+
+## Reklam davranışı (2026-11-21)
+
+| Eylem | Tetik |
+|-------|-------|
+| Listeden **başka** bir bebeğe geçmek | `baby_switch` |
+| Yeni bebek kaydetmek | `baby_switch` |
+| Paylaşım koduyla katılmak | `baby_switch` |
+| Zaten aktif bebeğe dokunmak | — (reklam yok) |
+| "Düzenle" düğmesi | — (reklam yok) |
+| Düzenlemeyi kaydetmek | `save` |
+
+`baby_switch` panelde ayrı bir anahtar (`migrations/025`).
+
+Ortak kurallar (ayrıntı: `TEKNIK_DOKUMAN.md` §23):
+
+- Tetikleyici panelden açılıp kapatılır (`/admin/ads`); ana anahtar kapalıyken
+  hiçbir istek atılmaz.
+- Reklam **kayıttan sonra** ve `await` edilmeden çağrılır; hiç `throw` etmez.
+  Kayıt hiçbir koşulda reklamdan etkilenmez.
+- Frekans sınırı (varsayılan 3 dk) ve oturum tavanı (5) her tetiği kapsar;
+  ninni çalarken, uygulama arka plandayken ve kaydetme onay penceresi
+  açıkken gösterim atlanır.
+- Ekranın altındaki **sabit banner** ayrı bir iş: tetikleyiciye bağlı değil,
+  her ekranda duruyor (§23.7).

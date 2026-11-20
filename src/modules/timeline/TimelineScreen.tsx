@@ -19,11 +19,19 @@ const KIND_META: Record<string, { icon: IconName; label: string; tint: string; t
   feeding: { icon: 'bottle', label: 'Beslenme', tint: moduleTint.bottle, track: colors.trackFeeding },
   sleep: { icon: 'sleep', label: 'Uyku', tint: moduleTint.sleep, track: colors.trackSleep },
   diaper: { icon: 'diaper', label: 'Bez Değişimi', tint: moduleTint.diaper, track: colors.trackDiaper },
+  medication: { icon: 'medication', label: 'İlaç', tint: moduleTint.medication, track: colors.trackOther },
   music: { icon: 'music', label: 'Müzik', tint: moduleTint.music, track: colors.trackOther },
   notification: { icon: 'reminders', label: 'Bildirim', tint: moduleTint.reminders, track: colors.trackOther },
 };
 
-const FILTERS = ['feeding', 'sleep', 'diaper', 'music'] as const;
+const FILTERS = ['feeding', 'sleep', 'diaper', 'medication', 'music'] as const;
+
+/** "Parol Surup · 4 ml" — miktar yoksa yalnızca ad. */
+function medicationLine(e: TimelineEntry): string | undefined {
+  const unit = subtypeLabel(e.subtype);
+  const dose = e.amount_ml === null ? null : `${e.amount_ml} ${unit ?? ''}`.trim();
+  return [e.note, dose].filter(Boolean).join(' · ') || undefined;
+}
 
 const shiftDate = (date: string, days: number): string => {
   const d = new Date(`${date}T12:00:00`);
@@ -191,7 +199,15 @@ export default function TimelineScreen() {
                 tint={meta.tint}
                 icon={meta.icon}
                 title={meta.label}
-                subtitle={subtypeLabel(e.subtype)}
+                /*
+                  İlaçta alt başlık ilacın ADI ve dozu: "Şurup" demek
+                  kullanıcıya bir şey söylemiyor, "Parol Surup · 4 ml"
+                  kaydın kendisi. Görünüm adı `note`, miktarı `amount_ml`,
+                  birimi `subtype` olarak taşıyor; metin burada birleşiyor
+                  (SQL'de birleştirmek harmanlama sorunu çıkarıyordu,
+                  bkz. migrations/027).
+                */
+                subtitle={e.kind === 'medication' ? medicationLine(e) : subtypeLabel(e.subtype)}
                 right={describeLines(e)}
                 onPress={() => setDetail(detailOf(e))}
               />

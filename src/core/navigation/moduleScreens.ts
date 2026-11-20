@@ -12,6 +12,7 @@ import BabiesScreen from '../../modules/babies/BabiesScreen';
 import TasksScreen from '../../modules/tasks/TasksScreen';
 import VaccinesScreen from '../../modules/vaccines/VaccinesScreen';
 import GrowthScreen from '../../modules/growth/GrowthScreen';
+import MedicationScreen from '../../modules/medication/MedicationScreen';
 import type { ModuleKey } from '../modules/types';
 
 /**
@@ -41,4 +42,5 @@ export const MODULE_SCREENS: Partial<Record<ModuleKey, ComponentType<object>>> =
   tasks: TasksScreen,
   vaccines: VaccinesScreen,
   growth: GrowthScreen,
+  medication: MedicationScreen,
 };

@@ -64,6 +64,12 @@ const GLYPHS = {
   headSize: 'head-outline',
   tasks: 'checkbox-marked-circle-outline',
   /*
+   * İlaç Takibi (Modül 16). Çizim `taskMedicine` ile aynı hap simgesi; ad
+   * ayrı çünkü biri MODÜL anahtarı (ızgara kutusu bu adla çiziliyor,
+   * `ModuleMeta` açıklamasına bak), diğeri bir görev türü.
+   */
+  medication: 'pill',
+  /*
    * MDI'de `syringe` ya da `vaccine` adında bir ikon YOK; arama
    * sonuçlarından tek uygun olan `needle`. `outline` varyantı da
    * bulunmuyor, bu yüzden burada dolu çizim kullanılıyor — iğne silueti
@@ -126,6 +132,14 @@ const GLYPHS = {
   check: 'check-circle-outline',
   warning: 'alert-circle-outline',
   clock: 'clock-outline',
+  /** Çalışan kronometre — "anlık" sekmesi. `clock` duvar saatidir, ölçüm değil. */
+  timer: 'timer-outline',
+  /**
+   * Olup bitmiş bir kayıt — "geri tarihli" sekmesi. Çizim `upcoming` ile
+   * aynı (takvim + saat); ad ayrı çünkü biri geleceği, biri geçmişi
+   * gösteriyor ve ileride ikisinden biri değişebilir.
+   */
+  backdate: 'calendar-clock-outline',
   note: 'note-text-outline',
   settings: 'tune-variant',
   edit: 'account-edit-outline',

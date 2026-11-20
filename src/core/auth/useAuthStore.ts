@@ -50,6 +50,8 @@ type AuthStore = {
     email: string,
     password: string,
     relationship: Relationship,
+    /** Kayıt ekranında işaretlenen yasal onayların kodları (sunucu: migrations/022). */
+    consents: string[],
   ) => Promise<void>;
   logout: () => Promise<void>;
   clearNotice: () => void;
@@ -147,7 +149,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     set({ status: 'signedIn', user: data.user, accessToken: data.access_token, notice: null });
   },
 
-  register: async (fullName, email, password, relationship) => {
+  register: async (fullName, email, password, relationship, consents) => {
     const data = await api.post<AuthPayload>(
       endpoints.auth.register,
       {
@@ -157,6 +159,13 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         // Kullanıcının varsayılan yakınlığı; ilk bebeğini oluştururken
         // üyeliğine yazılır (sunucu: migrations/014).
         relationship,
+        /*
+         * Yasal onaylar hesapla AYNI istekte gidiyor: sunucu zorunlu
+         * onaylardan biri eksikse hesabı hiç açmıyor. İki adıma bölünseydi
+         * onayı yarıda bırakan kullanıcı, dayanağı olmayan bir hesap
+         * bırakırdı.
+         */
+        consents,
         device: device(),
       },
       { auth: false },

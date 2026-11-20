@@ -3,7 +3,7 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon } from './Icon';
-import { Button, FormError } from './ui';
+import { Button, ButtonRow, FormError } from './ui';
 import { errorText } from '../core/api/client';
 import { babyService } from '../core/api/modules';
 import { useBabyStore } from '../core/stores/useBabyStore';
@@ -184,13 +184,15 @@ export function ResetDataSheet({
                   {error ? <FormError message={error} /> : null}
 
                   <View style={s.gap} />
-                  <Button
-                    label={busy ? 'Siliniyor…' : 'Evet, tüm verileri sil'}
-                    variant="danger"
-                    onPress={() => void run()}
-                    disabled={busy || !target}
-                  />
-                  <Button label="Vazgeç" variant="ghost" onPress={onClose} disabled={busy} />
+                  <ButtonRow>
+                    <Button
+                      label={busy ? 'Siliniyor…' : 'Evet, tüm verileri sil'}
+                      variant="danger"
+                      onPress={() => void run()}
+                      disabled={busy || !target}
+                    />
+                    <Button label="Vazgeç" variant="ghost" onPress={onClose} disabled={busy} />
+                  </ButtonRow>
                 </>
               )}
             </>

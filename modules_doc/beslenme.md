@@ -417,3 +417,28 @@ izlenimi verir (§22.8).
       bölümler çizilmiyor; hatırlatıcı kategorileri etkilenmiyor.
 - [ ] Eski sürüm bir istemci, göç yayınlandıktan sonra da çalışmaya devam
       ediyor (uçlar en az bir sürüm korunuyor).
+
+---
+
+## Reklam davranışı (2026-11-21)
+
+Beslenme bir **kabuk**: kendi kaydı yok, reklamı da yok. Tetikleyiciler dört
+alt modülün kendi dosyalarında:
+
+| Sekme | Tetik |
+|-------|-------|
+| Emzirme | `timer_start` (başlatma, 2 sn) + `save` |
+| Biberon | `save` |
+| Ek Gıda | `save` |
+| Sağma | `timer_start` (başlatma, 3 sn) + `save` |
+
+Sekme değiştirmek reklam açmaz.
+
+Ortak kurallar (ayrıntı: `TEKNIK_DOKUMAN.md` §23):
+
+- Tetikleyici panelden açılıp kapatılır (`/admin/ads`); ana anahtar kapalıyken
+  hiçbir istek atılmaz.
+- Reklam **kayıttan sonra** ve `await` edilmeden çağrılır; hiç `throw` etmez.
+- Frekans sınırı (varsayılan 3 dk) ve oturum tavanı (5) her tetiği kapsar.
+- Ekranın altındaki **sabit banner** ayrı bir iş: tetikleyiciye bağlı değil,
+  her ekranda duruyor (§23.7).

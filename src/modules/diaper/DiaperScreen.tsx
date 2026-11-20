@@ -4,7 +4,10 @@ import { Alert, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { Chips, RecordRow, StatTile, clockOf } from '../../components/records';
 import { type IconName } from '../../components/Icon';
 import { RecordDetailSheet, fullMoment, type RecordDetail } from '../../components/RecordDetail';
-import { Button, Card, EmptyState, FormError, Loading, Screen, SectionTitle } from '../../components/ui';
+import { BottomSheet } from '../../components/BottomSheet';
+import {
+  Button, ButtonRow, Card, EmptyState, FormError, Loading, Screen, SectionTitle,
+} from '../../components/ui';
 import { ReadOnlyBanner, useCanEdit } from '../../components/permission';
 import { errorText } from '../../core/api/client';
 import {
@@ -68,6 +71,18 @@ export default function DiaperScreen() {
     summary.reload();
   };
 
+  /** Ekleme sayfası açık mı — form ekranda sabit durmuyor. */
+  const [formOpen, setFormOpen] = useState(false);
+
+  /** Sayfayı temiz açar: önceki kaydın rengi, kıvamı ve notu kalmasın. */
+  const openForm = () => {
+    setError(null);
+    setColor(null);
+    setTexture(null);
+    setNote('');
+    setFormOpen(true);
+  };
+
   const save = async () => {
     if (!babyId) return;
     setBusy(true);
@@ -87,6 +102,7 @@ export default function DiaperScreen() {
       setColor(null);
       setTexture(null);
       setNote('');
+      setFormOpen(false);
       refreshAll();
     } catch (err) {
       setError(errorText(err));
@@ -183,8 +199,48 @@ export default function DiaperScreen() {
       </Card>
 
       {/* ── Hızlı ekleme ── */}
-      <SectionTitle hint="Saat otomatik olarak şu an kaydedilir.">Bez değişimi ekle</SectionTitle>
+      {/* Ekleme formu alt sayfada; ekran bugünün özetini ve kayıtları gösterir. */}
+      <Button label="+ Bez değişimi ekle" onPress={openForm} disabled={busy || !canEdit} />
+
+      {/* ── Geçmiş ── */}
+      <SectionTitle hint="Uzun basıp silebilirsin.">Geçmiş</SectionTitle>
       <Card>
+        {list.loading && records.length === 0 ? (
+          <Loading label="Kayıtlar yükleniyor…" />
+        ) : records.length === 0 ? (
+          <Text style={s.hint}>Henüz bez kaydı yok.</Text>
+        ) : (
+          records.map((r) => (
+            <RecordRow
+              key={r.id}
+              icon={TYPE_ICONS[r.diaper_type] ?? 'diaper'}
+              title={TYPE_LABELS[r.diaper_type] ?? r.diaper_type}
+              detail={[
+                r.color ? COLOR_LABELS[r.color] : null,
+                r.consistency ? TEXTURE_LABELS[r.consistency] : null,
+                r.rash_status !== 'none' ? `pişik: ${RASH_LABELS[r.rash_status]}` : null,
+                r.cream_applied ? 'krem' : null,
+                r.note,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+              right={clockOf(r.changed_at)}
+              onPress={() => setDetail(detailOf(r))}
+              onLongPress={canEdit ? () => onDelete(r) : undefined}
+            />
+          ))
+        )}
+      </Card>
+
+      <RecordDetailSheet detail={detail} onClose={() => setDetail(null)} />
+
+      <BottomSheet
+        visible={formOpen}
+        busy={busy}
+        onClose={() => setFormOpen(false)}
+        title="Bez değişimi ekle"
+        subtitle="Saat otomatik olarak şu an kaydedilir."
+      >
         <Text style={s.label}>Tür</Text>
         <Chips options={DIAPER_TYPES} value={type} onChange={(v) => v && setType(v)} labels={TYPE_LABELS} disabled={busy || !canEdit} />
 
@@ -221,42 +277,12 @@ export default function DiaperScreen() {
           placeholderTextColor={colors.textFaint}
           editable={!busy}
         />
-
         <View style={s.gap} />
-        <Button label={busy ? 'Kaydediliyor…' : 'Kaydet'} onPress={save} disabled={busy || !canEdit} />
-      </Card>
-
-      {/* ── Geçmiş ── */}
-      <SectionTitle hint="Uzun basıp silebilirsin.">Geçmiş</SectionTitle>
-      <Card>
-        {list.loading && records.length === 0 ? (
-          <Loading label="Kayıtlar yükleniyor…" />
-        ) : records.length === 0 ? (
-          <Text style={s.hint}>Henüz bez kaydı yok.</Text>
-        ) : (
-          records.map((r) => (
-            <RecordRow
-              key={r.id}
-              icon={TYPE_ICONS[r.diaper_type] ?? 'diaper'}
-              title={TYPE_LABELS[r.diaper_type] ?? r.diaper_type}
-              detail={[
-                r.color ? COLOR_LABELS[r.color] : null,
-                r.consistency ? TEXTURE_LABELS[r.consistency] : null,
-                r.rash_status !== 'none' ? `pişik: ${RASH_LABELS[r.rash_status]}` : null,
-                r.cream_applied ? 'krem' : null,
-                r.note,
-              ]
-                .filter(Boolean)
-                .join(' · ')}
-              right={clockOf(r.changed_at)}
-              onPress={() => setDetail(detailOf(r))}
-              onLongPress={canEdit ? () => onDelete(r) : undefined}
-            />
-          ))
-        )}
-      </Card>
-
-      <RecordDetailSheet detail={detail} onClose={() => setDetail(null)} />
+        <ButtonRow>
+          <Button label={busy ? 'Kaydediliyor…' : 'Kaydet'} onPress={save} disabled={busy || !canEdit} />
+          <Button label="Vazgeç" variant="ghost" onPress={() => setFormOpen(false)} disabled={busy} />
+        </ButtonRow>
+      </BottomSheet>
     </Screen>
   );
 }

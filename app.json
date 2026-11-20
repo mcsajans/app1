@@ -147,6 +147,14 @@
         {
           "userTrackingPermission": "Reklamları ilgi alanlarına göre gösterebilmek için izin istiyoruz. İzin vermezsen reklamlar yine çıkar, yalnızca kişiselleştirilmez."
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "extraProguardRules": "# Room'un urettigi *_Impl siniflari yalnizca yansimayla olusturulur.\n# androidx.room'un kendi kurali (-keep class * extends androidx.room.RoomDatabase)\n# uye belirtimi icermedigi icin R8 sinifi birakip <init>() kurucusunu siliyor;\n# WorkManager (AdMob/expo-notifications uzerinden geliyor) acilista WorkDatabase'i\n# olusturamayip uygulamayi cokertiyor. Kurucuyu acikca koruyoruz.\n-keep class * extends androidx.room.RoomDatabase { <init>(); }\n-dontwarn androidx.room.paging.**"
+          }
+        }
       ]
     ]
   }

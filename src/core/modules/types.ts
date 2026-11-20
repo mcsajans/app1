@@ -14,7 +14,8 @@ export type ModuleKey =
   | 'pumping'
   | 'tasks'
   | 'vaccines'
-  | 'growth';
+  | 'growth'
+  | 'medication';
 
 /** Modül meta verisi — React bağımlılığı yok, store bunu güvenle import eder. */
 export type ModuleMeta = {

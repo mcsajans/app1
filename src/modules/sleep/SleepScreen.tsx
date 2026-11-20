@@ -2,12 +2,16 @@ import React, { useEffect, useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 
 import {
-  Chips, RecordRow, StatTile, TimerDisplay,
+  RecordRow, StatTile, TimerDisplay,
   clockOf, formatDuration, humanDuration, useElapsedSeconds,
 } from '../../components/records';
 import { RecordDetailSheet, fullMoment, type RecordDetail } from '../../components/RecordDetail';
-import { Button, Card, EmptyState, FormError, Loading, Screen, SectionTitle } from '../../components/ui';
+import {
+  Button, ButtonRow, Card, EmptyState, FormError, Loading, Screen, SectionTitle,
+} from '../../components/ui';
 import { ReadOnlyBanner, useCanEdit } from '../../components/permission';
+import { ManualSleepSheet, type ManualSleepValues } from './ManualSleepSheet';
+import { SleepStartPanel, type SleepStartRequest } from './SleepStartPanel';
 import { errorText } from '../../core/api/client';
 import { localDate, sleepService, type SleepRecord } from '../../core/api/modules';
 import { useAsyncData } from '../../core/hooks/useAsyncData';
@@ -23,6 +27,25 @@ import { withSaveFeedback } from '../../core/feedback/withSaveFeedback';
  * bildiriminde de kullanılıyor ve iki kopya zamanla ayrışırdı.
  */
 const TYPE_LABELS = SLEEP_TYPE_LABEL;
+
+/**
+ * Bu modülden açılan reklamların ortak ayarı.
+ *
+ * İki sapma var ve ikisi de uyku modülüne özgü:
+ *
+ *  - **3 saniye gecikme** (panelin 2 sn'si yerine): "Uykuya daldı"ya basan
+ *    ebeveyn genelde telefonu bırakıp bebeği yatırıyor; bir saniye fazla
+ *    bekleme, reklamın elin telefondan ayrıldığı anda açılmasını azaltıyor.
+ *  - **Ses kapalı** (`muted`): bebeği uyutmaya çalışırken açılan sesli bir
+ *    reklam modülün bütün amacını bozar. Ninni çalarken reklam zaten hiç
+ *    gösterilmiyor (`adService` kapısı), ama ninni açık olmadan da uyku
+ *    ortamı sessiz olmalı. Ses yalnızca bu gösterim boyunca kapalı kalır;
+ *    reklam kapanınca `adService` geri açıyor.
+ *
+ * Panel ayarları (tetikleyici anahtarları, frekans sınırı, oturum tavanı)
+ * aynen geçerli — buradan yalnızca gecikme ve ses değişiyor.
+ */
+const SLEEP_AD = { delayMs: 3000, muted: true } as const;
 const QUALITY_LABELS = { rahat: 'Rahat', huzursuz: 'Huzursuz', sik_uyandi: 'Sık uyandı' } as const;
 
 /**
@@ -42,8 +65,16 @@ export default function SleepScreen() {
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [newType, setNewType] = useState<'night' | 'nap'>('nap');
   const [detail, setDetail] = useState<RecordDetail | null>(null);
+  /** Elle kayıt sayfası açık mı. */
+  const [sheet, setSheet] = useState(false);
+  /*
+   * Sayfayı ve paneli her açılışta yeniden bağlamak için artan sayaçlar.
+   * İkisi de saat varsayılanlarını bir kez hesaplıyor; `key` değişmezse dün
+   * akşam açılan form bugün eski saatlerle karşılıyor.
+   */
+  const [sheetSeq, setSheetSeq] = useState(0);
+  const [panelSeq, setPanelSeq] = useState(0);
 
   const list = useAsyncData(
     () => (babyId ? sleepService.list(babyId) : Promise.resolve({ sleep: [] })),
@@ -73,17 +104,73 @@ export default function SleepScreen() {
     summary.reload();
   };
 
-  const run = async (fn: () => Promise<unknown>) => {
+  /**
+   * Ortak istek sarmalayıcısı. Başarıyı **döndürür**: elle giriş sayfası
+   * yalnızca istek geçtiyse kapanmalı, yoksa kullanıcı doldurduğu formu
+   * kaybeder ve hatayı arkadaki ekranda arar.
+   */
+  const run = async (fn: () => Promise<unknown>): Promise<boolean> => {
     setBusy(true);
     setError(null);
     try {
       await fn();
       refreshAll();
+      return true;
     } catch (err) {
       setError(errorText(err));
+      return false;
     } finally {
       setBusy(false);
     }
+  };
+
+  const openSheet = () => {
+    setError(null);
+    setSheetSeq((n) => n + 1);
+    setSheet(true);
+  };
+
+  /**
+   * Elle kayıt (§11.1) — kayıt doğrudan tamamlanmış yazılır.
+   *
+   * İki yerden çağrılır: başlangıç panelinin "Geri tarihli" sekmesi ve sayaç
+   * akarken açılan alt sayfa. Gövdesi aynı olduğu için tek yerde durur;
+   * çağıranlar yalnızca başarıdan sonra ne kapatacaklarına karar verir.
+   *
+   * "Sayacı geçmişten başlat" artık burada değil: paneldeki kutucuk aynı işi
+   * tek ekranda yapıyor.
+   */
+  const submitManual = (v: ManualSleepValues): Promise<boolean> => {
+    if (!babyId) return Promise.resolve(false);
+    return run(() => withSaveFeedback(
+      () => sleepService.create(babyId, {
+        sleep_type: v.sleepType,
+        started_at: v.startedAt,
+        ended_at: v.endedAt,
+        quality: v.quality,
+        note: v.note,
+      }),
+      undefined,
+      'save',
+      SLEEP_AD,
+    ));
+  };
+
+  const onManualSubmit = (v: ManualSleepValues) => {
+    void submitManual(v).then((saved) => {
+      if (saved) setSheet(false);
+    });
+  };
+
+  /*
+   * Panelden gelen kayıt: başarıdan sonra panel `key` ile yeniden bağlanır,
+   * yani form boşalır ve sekme "Anlık"a döner. Dolu formu ekranda bırakmak
+   * "kaydedildi mi?" sorusunu doğuruyordu.
+   */
+  const onPanelManualSave = (v: ManualSleepValues) => {
+    void submitManual(v).then((saved) => {
+      if (saved) setPanelSeq((n) => n + 1);
+    });
   };
 
   /**
@@ -93,18 +180,21 @@ export default function SleepScreen() {
    * gölgeliyor hem politika riskinin en yüksek olduğu yer. Panelden açılırsa
    * burası çalışır; kayıt her hâlükârda önce ve `await` ile.
    */
-  const onStart = () => {
+  const onStart = (req: SleepStartRequest) => {
     if (!babyId) return;
     void run(async () => {
-      const res = await sleepService.start(babyId, newType);
-      showAdAfterAction('timer_start');
+      const res = await sleepService.start(babyId, req.sleepType, req.at ?? undefined, req.note);
+      showAdAfterAction('timer_start', SLEEP_AD);
       return res;
     });
   };
 
   const onStop = () => {
     if (!running) return;
-    void run(() => withSaveFeedback(() => sleepService.stop(running.id, {})));
+    // "Uyandı" da bu modülün reklamı: aynı gecikme ve sessizlik geçerli.
+    void run(() => withSaveFeedback(
+      () => sleepService.stop(running.id, {}), undefined, 'save', SLEEP_AD,
+    ));
   };
 
   const onDelete = (r: SleepRecord) => {
@@ -172,21 +262,25 @@ export default function SleepScreen() {
               {TYPE_LABELS[running.sleep_type]} sürüyor · {clockOf(running.started_at)}&apos;den beri
             </Text>
             <TimerDisplay seconds={elapsed} />
-            <Button label={busy ? 'Kaydediliyor…' : 'Uyandı'} onPress={onStop} disabled={busy || !canEdit} />
+            <ButtonRow>
+              <Button label={busy ? 'Kaydediliyor…' : 'Uyandı'} onPress={onStop} disabled={busy || !canEdit} />
+              {/* Sayaç akarken de geçmiş bir uyku girilebilir (çakışmadığı sürece). */}
+              <Button
+                label="Elle kayıt ekle"
+                variant="ghost"
+                onPress={openSheet}
+                disabled={busy || !canEdit}
+              />
+            </ButtonRow>
           </>
         ) : (
-          <>
-            <Text style={s.label}>Uyku tipi</Text>
-            <Chips
-              options={['nap', 'night'] as const}
-              value={newType}
-              onChange={(v) => v && setNewType(v)}
-              labels={TYPE_LABELS}
-              disabled={busy || !canEdit}
-            />
-            <View style={s.gap} />
-            <Button label={busy ? 'Başlatılıyor…' : 'Uykuya daldı'} onPress={onStart} disabled={busy || !canEdit} />
-          </>
+          <SleepStartPanel
+            key={panelSeq}
+            busy={busy}
+            disabled={!canEdit}
+            onStart={onStart}
+            onManualSave={onPanelManualSave}
+          />
         )}
       </Card>
 
@@ -244,6 +338,15 @@ export default function SleepScreen() {
       </Card>
 
       <RecordDetailSheet detail={detail} onClose={() => setDetail(null)} />
+
+      <ManualSleepSheet
+        key={sheetSeq}
+        visible={sheet}
+        busy={busy}
+        error={sheet ? error : null}
+        onClose={() => setSheet(false)}
+        onSubmit={onManualSubmit}
+      />
     </Screen>
   );
 }

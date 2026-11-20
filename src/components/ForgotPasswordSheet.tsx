@@ -3,7 +3,7 @@ import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon } from './Icon';
-import { Button, Field, FormError } from './ui';
+import { Button, ButtonRow, Field, FormError } from './ui';
 import { ApiError, api, errorText } from '../core/api/client';
 import { endpoints } from '../core/api/endpoints';
 import { colors, radius, spacing, typography } from '../core/theme';
@@ -36,6 +36,15 @@ export function ForgotPasswordSheet({
   const [email, setEmail] = useState('');
   const [token, setToken] = useState('');
   const [password, setPassword] = useState('');
+  /**
+   * Yeni şifrenin ikinci kez yazılması.
+   *
+   * Sıfırlama akışında şifre **göremediğin** bir yerden geliyor: yanlış
+   * yazılırsa kullanıcı yeni şifresini bilmeden hesabından kilitlenir ve
+   * tek çaresi akışı baştan başlatmaktır. Kayıt ve şifre değiştirme
+   * ekranlarında zaten iki alan vardı; burada eksikti.
+   */
+  const [password2, setPassword2] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fields, setFields] = useState<Record<string, string>>({});
@@ -49,6 +58,7 @@ export function ForgotPasswordSheet({
       setEmail(initialEmail ?? '');
       setToken('');
       setPassword('');
+      setPassword2('');
       setError(null);
       setFields({});
       setBusy(false);
@@ -76,9 +86,21 @@ export function ForgotPasswordSheet({
       'code',
     );
 
+  /** İki alan dolu ve farklıysa uyarı; boşken sessiz (henüz yazılıyor). */
+  const mismatch = password2.length > 0 && password !== password2;
+
+  /**
+   * Kod artık **6 haneli** ve kullanıcıya bağlı; bu yüzden e-posta da
+   * gönderiliyor (sunucu aynı anda iki kullanıcıya aynı kodu verebilir,
+   * kodun tek başına hangi hesaba ait olduğu bilinmiyor).
+   */
   const applyNew = () =>
     run(
-      () => api.post(endpoints.auth.resetPassword, { token: token.trim(), password }),
+      () => api.post(endpoints.auth.resetPassword, {
+        email: email.trim().toLowerCase(),
+        code: token.trim(),
+        password,
+      }),
       'done',
     );
 
@@ -116,17 +138,25 @@ export function ForgotPasswordSheet({
               </View>
               <Text style={s.title}>Kodu gir</Text>
               <Text style={s.body}>
-                <Text style={s.strong}>{email.trim()}</Text> adresi kayıtlıysa sıfırlama kodu
-                gönderildi. Postadaki kodu buraya yapıştır ve yeni şifreni belirle.
-                Kod <Text style={s.strong}>1 saat</Text> geçerli.
+                <Text style={s.strong}>{email.trim()}</Text> adresi kayıtlıysa
+                <Text style={s.strong}> 6 haneli</Text> bir sıfırlama kodu gönderildi.
+                Kodu buraya yaz ve yeni şifreni belirle. Kod
+                <Text style={s.strong}> 15 dakika</Text> geçerli ve en fazla
+                <Text style={s.strong}> 5 kez</Text> denenebilir.
               </Text>
 
               <Field
-                label="Sıfırlama kodu"
+                label="6 haneli kod"
                 value={token}
-                onChangeText={setToken}
-                placeholder="E-postadan kopyala"
-                error={fields.token}
+                // Yalnızca rakam ve en fazla 6 hane: yapıştırılan metnin
+                // içindeki boşluk ve tireler de böylece eleniyor.
+                onChangeText={(v) => setToken(v.replace(/\D/g, '').slice(0, 6))}
+                placeholder="123456"
+                keyboardType="number-pad"
+                autoComplete="one-time-code"
+                textContentType="oneTimeCode"
+                maxLength={6}
+                error={fields.code ?? fields.token}
                 editable={!busy}
               />
               <Field
@@ -141,22 +171,43 @@ export function ForgotPasswordSheet({
                 error={fields.password}
                 editable={!busy}
               />
+              <Field
+                label="Yeni şifre (tekrar)"
+                value={password2}
+                onChangeText={setPassword2}
+                placeholder="••••••••"
+                secureTextEntry
+                revealable
+                autoComplete="new-password"
+                textContentType="newPassword"
+                error={mismatch ? 'Şifreler eşleşmiyor' : undefined}
+                editable={!busy}
+              />
 
               {error ? <FormError message={error} /> : null}
 
               <View style={s.gap} />
-              <Button
-                label={busy ? 'Kaydediliyor…' : 'Şifremi değiştir'}
-                onPress={() => void applyNew()}
-                disabled={busy || token.trim().length === 0 || password.length === 0}
-              />
-              {/* Kod gelmediyse adresi düzeltip yeniden istemek gerekebilir. */}
-              <Button
-                label="Adresi değiştir"
-                variant="ghost"
-                onPress={() => setStep('ask')}
-                disabled={busy}
-              />
+              <ButtonRow>
+                <Button
+                  label={busy ? 'Kaydediliyor…' : 'Şifremi değiştir'}
+                  onPress={() => void applyNew()}
+                  disabled={
+                    busy
+                    // Kod tam 6 hane olmadan istek atılmıyor.
+                    || token.trim().length !== 6
+                    || password.length === 0
+                    // İki alan birebir aynı olmadan düğme açılmıyor.
+                    || password !== password2
+                  }
+                />
+                {/* Kod gelmediyse adresi düzeltip yeniden istemek gerekebilir. */}
+                <Button
+                  label="Adresi değiştir"
+                  variant="ghost"
+                  onPress={() => setStep('ask')}
+                  disabled={busy}
+                />
+              </ButtonRow>
             </>
           ) : (
             <>
@@ -183,12 +234,14 @@ export function ForgotPasswordSheet({
               {error ? <FormError message={error} /> : null}
 
               <View style={s.gap} />
-              <Button
-                label={busy ? 'Gönderiliyor…' : 'Kodu gönder'}
-                onPress={() => void sendCode()}
-                disabled={busy || email.trim().length === 0}
-              />
-              <Button label="Vazgeç" variant="ghost" onPress={onClose} disabled={busy} />
+              <ButtonRow>
+                <Button
+                  label={busy ? 'Gönderiliyor…' : 'Kodu gönder'}
+                  onPress={() => void sendCode()}
+                  disabled={busy || email.trim().length === 0}
+                />
+                <Button label="Vazgeç" variant="ghost" onPress={onClose} disabled={busy} />
+              </ButtonRow>
             </>
           )}
         </View>

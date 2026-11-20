@@ -80,3 +80,27 @@ Sen kıdemli bir Full-Stack Yazılım Mimarısın. Projemizde Bebek & Çocuk Tak
 3. **Adım 3:** Tamamlanan backend API'lerinin istek/yanıt detaylarını `TEKNIK_DOKUMAN.md` dosyasına kaydet.
 4. **Adım 4:** React Native projesine geç; `bottleService` modülünü oluştur, içerik/miktar/hızlı buton formunu ve isteğe bağlı kronometreyi kurgula.
 5. **Adım 5:** Son öğün kartı, günlük özet ve geçmiş listesi UI bileşenlerini geliştirip test et.
+
+---
+
+## Reklam davranışı (2026-11-21)
+
+| Eylem | Tetik |
+|-------|-------|
+| "+ Biberon ekle" → Kaydet | `save` |
+
+Süre kronometresi (form içindeki "⏱ Süreyi başlat") reklam **tetiklemez**:
+sağma ve uykudakinin aksine burada sunucuda açılan bir oturum yok, düğme
+yalnızca forma süre bırakıyor.
+
+Ortak kurallar (ayrıntı: `TEKNIK_DOKUMAN.md` §23):
+
+- Tetikleyici panelden açılıp kapatılır (`/admin/ads`); ana anahtar kapalıyken
+  hiçbir istek atılmaz.
+- Reklam **kayıttan sonra** ve `await` edilmeden çağrılır; hiç `throw` etmez.
+  Kayıt hiçbir koşulda reklamdan etkilenmez.
+- Frekans sınırı (varsayılan 3 dk) ve oturum tavanı (5) her tetiği kapsar;
+  ninni çalarken, uygulama arka plandayken ve kaydetme onay penceresi
+  açıkken gösterim atlanır.
+- Ekranın altındaki **sabit banner** ayrı bir iş: tetikleyiciye bağlı değil,
+  her ekranda duruyor (§23.7).

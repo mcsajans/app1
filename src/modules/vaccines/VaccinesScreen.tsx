@@ -5,7 +5,7 @@ import { Chips } from '../../components/records';
 import { DateField, TimeField } from '../../components/DateTimeField';
 import { ReadOnlyBanner, useCanEdit } from '../../components/permission';
 import {
-  Button, Card, EmptyState, FormError, Loading, Screen, SectionTitle,
+  Button, ButtonRow, Card, EmptyState, FormError, Loading, Screen, SectionTitle,
 } from '../../components/ui';
 import { Icon } from '../../components/Icon';
 import { errorText } from '../../core/api/client';
@@ -598,17 +598,19 @@ export default function VaccinesScreen() {
                       </Pressable>
 
                       <View style={s.gap} />
-                      <Button
-                        label={busy ? 'Kaydediliyor…' : 'Randevuyu kaydet'}
-                        onPress={() => savePlan(v)}
-                        disabled={busy}
-                      />
-                      <Button
-                        label="Vazgeç"
-                        variant="ghost"
-                        onPress={() => setPlanId(null)}
-                        disabled={busy}
-                      />
+                      <ButtonRow>
+                        <Button
+                          label={busy ? 'Kaydediliyor…' : 'Randevuyu kaydet'}
+                          onPress={() => savePlan(v)}
+                          disabled={busy}
+                        />
+                        <Button
+                          label="Vazgeç"
+                          variant="ghost"
+                          onPress={() => setPlanId(null)}
+                          disabled={busy}
+                        />
+                      </ButtonRow>
                       <Pressable
                         onPress={() => setStatus(v, 'skipped')}
                         disabled={busy}
@@ -684,17 +686,19 @@ export default function VaccinesScreen() {
                       />
 
                       <View style={s.gap} />
-                      <Button
-                        label={busy ? 'Kaydediliyor…' : 'Yapıldı olarak işaretle'}
-                        onPress={() => saveDone(v)}
-                        disabled={busy}
-                      />
-                      <Button
-                        label="Vazgeç"
-                        variant="ghost"
-                        onPress={() => setDoneId(null)}
-                        disabled={busy}
-                      />
+                      <ButtonRow>
+                        <Button
+                          label={busy ? 'Kaydediliyor…' : 'Yapıldı olarak işaretle'}
+                          onPress={() => saveDone(v)}
+                          disabled={busy}
+                        />
+                        <Button
+                          label="Vazgeç"
+                          variant="ghost"
+                          onPress={() => setDoneId(null)}
+                          disabled={busy}
+                        />
+                      </ButtonRow>
                     </View>
                   ) : null}
                 </View>
@@ -798,12 +802,14 @@ export default function VaccinesScreen() {
             </Text>
 
             <View style={s.gap} />
-            <Button
-              label={busy ? 'Kaydediliyor…' : 'Takvime ekle'}
-              onPress={saveNew}
-              disabled={busy}
-            />
-            <Button label="Vazgeç" variant="ghost" onPress={resetAdd} disabled={busy} />
+            <ButtonRow>
+              <Button
+                label={busy ? 'Kaydediliyor…' : 'Takvime ekle'}
+                onPress={saveNew}
+                disabled={busy}
+              />
+              <Button label="Vazgeç" variant="ghost" onPress={resetAdd} disabled={busy} />
+            </ButtonRow>
           </Card>
         </>
       ) : (

@@ -33,8 +33,12 @@ export type AuditFields = {
    * kılıyor (önceden `string` olduğu için elle daraltma gerekiyordu).
    */
   actor_relationship?: Relationship | null;
-  /** Kronometreyle mi elle mi girildi. */
-  entry_source?: 'timer' | 'manual';
+  /**
+   * Kaydın nasıl girildiği. `notification` ve `task` yalnızca ilaç
+   * modülünde (Modül 16) kullanılıyor: doz bildirimdeki "Verildi"
+   * düğmesinden ya da tamamlanan bir görevden de yazılabiliyor.
+   */
+  entry_source?: 'timer' | 'manual' | 'notification' | 'task';
   created_at?: string;
   updated_at?: string;
 };
@@ -81,18 +85,47 @@ export const sleepService = {
   summary: (babyId: Id, date: string) =>
     api.get<SleepSummary>(babyPath(babyId, '/sleep/daily-summary'), { query: { date } }),
 
-  start: (babyId: Id, sleepType: 'night' | 'nap') =>
+  /**
+   * Sayacı başlatır. `startedAt` verilirse **geçmiş bir andan** başlatılır
+   * (§11.1): sayaç o andan itibaren akar, süre bitişte sunucuda hesaplanır.
+   * Sunucu geçmiş anı doğrular — gelecek olamaz, kapanmış kaydın üstüne binemez.
+   */
+  start: (babyId: Id, sleepType: 'night' | 'nap', startedAt?: string, note?: string | null) =>
     api.post<{ sleep: SleepRecord; already_running: boolean }>(
       babyPath(babyId, '/sleep/start'),
-      { sleep_type: sleepType, started_at: iso(), tz_offset_min: tzOffsetMin() },
+      {
+        sleep_type: sleepType,
+        started_at: startedAt ?? iso(),
+        tz_offset_min: tzOffsetMin(),
+        // Not sayaç başlarken yazılır; alan boşsa anahtar hiç gönderilmez.
+        ...(note === undefined || note === null ? {} : { note }),
+      },
     ),
 
   stop: (recordId: Id, body: { wake_count?: number; quality?: string | null; wake_reason?: string | null }) =>
     api.post<{ sleep: SleepRecord }>(`/sleep/${recordId}/stop`, { ended_at: iso(), ...body }),
 
-  create: (babyId: Id, body: Record<string, unknown>) =>
+  /**
+   * Elle uyku kaydı — kronometre hiç çalıştırılmadan (§11.1).
+   *
+   * `ended_at` verilmezse kayıt `running` doğar; yani "uykuya geçmiş saatte
+   * daldı, hâlâ uyuyor" durumu da buradan girilebilir.
+   */
+  create: (
+    babyId: Id,
+    body: {
+      sleep_type: 'night' | 'nap';
+      started_at: string;
+      ended_at?: string | null;
+      quality?: SleepRecord['quality'];
+      wake_reason?: string | null;
+      wake_count?: number;
+      note?: string | null;
+    },
+  ) =>
     api.post<{ sleep: SleepRecord }>(babyPath(babyId, '/sleep'), {
       tz_offset_min: tzOffsetMin(),
+      entry_source: 'manual',
       ...body,
     }),
 
@@ -360,10 +393,44 @@ export const breastfeedingService = {
   active: (babyId: Id) =>
     api.get<{ session: ActiveBreastSession | null }>(babyPath(babyId, '/breastfeeding/active')),
 
-  start: (babyId: Id, side: 'left' | 'right') =>
+  /**
+   * Seansı başlatır. `at` verilirse **geçmiş bir andan** başlar (§10.6);
+   * sunucu o anı doğrular (gelecek olamaz, 6 saatten eski olamaz, kapanmış
+   * seansın üstüne binemez).
+   *
+   * `note` başlangıç ekranında yazılır ve seansın notu olur; bitişte ayrıca
+   * sorulmaz — anne notu aklına geldiği anda, yani emzirmeye başlarken yazar.
+   */
+  start: (babyId: Id, side: 'left' | 'right', at?: string, note?: string | null) =>
     api.post<{ session: ActiveBreastSession }>(babyPath(babyId, '/breastfeeding/start'), {
       side,
-      at: iso(),
+      at: at ?? iso(),
+      tz_offset_min: tzOffsetMin(),
+      ...(note === undefined || note === null ? {} : { note }),
+    }),
+
+  /**
+   * Elle emzirme kaydı — başlangıç/bitiş verilir, seans doğrudan tamamlanmış
+   * doğar (§10.6).
+   *
+   * `left_sec`/`right_sec` verilmezse pencerenin tamamı `first_side` tarafına
+   * yazılır; sunucu her iki hâlde de gerçek zaman damgalı segmentler üretir,
+   * çünkü geçmiş listesi süreleri segmentlerden toplar (§22.1).
+   */
+  createManual: (
+    babyId: Id,
+    body: {
+      started_at: string;
+      ended_at: string;
+      first_side?: 'left' | 'right';
+      left_sec?: number;
+      right_sec?: number;
+      note?: string | null;
+    },
+  ) =>
+    api.post<{ session: ActiveBreastSession }>(babyPath(babyId, '/breastfeeding/manual'), {
+      tz_offset_min: tzOffsetMin(),
+      ...body,
     }),
 
   switchSide: (babyId: Id, sessionId: Id, side: 'left' | 'right') =>
@@ -761,6 +828,20 @@ export const vaccineService = {
         ...(opts.status?.length ? { status: opts.status.join(',') } : {}),
       },
     }),
+
+  /**
+   * Planlanan tarihi geçtiği hâlde **girilmemiş** aşıları bildirim
+   * merkezine düşürür (ana sayfa açılışında çağrılır).
+   *
+   * Uç idempotent: aynı bebek için 24 saat içinde ikinci bir bildirim
+   * yazılmıyor. Yanıt `notified` ile bildirimin gerçekten yazılıp
+   * yazılmadığını söylüyor — ekran rozeti yalnızca yazıldıysa tazeliyor.
+   */
+  remindMissing: (babyId: Id) =>
+    api.post<{ notified: boolean; reason: string; missing: number }>(
+      babyPath(babyId, '/vaccines/remind-missing'),
+      { tz_offset_min: tzOffsetMin() },
+    ),
 
   /** Kütüphane. Bebek bağlamı yok; `category` ile süzülebilir. */
   library: (category?: VaccineCategory) =>
@@ -1274,4 +1355,165 @@ export const growthService = {
     api.put<{ measurement: GrowthMeasurement }>(`/growth/${id}`, body),
 
   remove: (id: Id) => api.delete<{ deleted: boolean }>(`/growth/${id}`),
+};
+
+/* ────────────────────────── Modül 16 — İlaç Takibi ────────────────────────── */
+
+export const MEDICATION_FORMS = ['syrup', 'drops', 'tablet', 'suppository', 'cream', 'spray', 'other'] as const;
+export type MedicationForm = (typeof MEDICATION_FORMS)[number];
+
+export const MEDICATION_ROUTES = ['oral', 'rectal', 'topical', 'nasal', 'other'] as const;
+export type MedicationRoute = (typeof MEDICATION_ROUTES)[number];
+
+export const DOSE_UNITS = ['ml', 'mg', 'damla', 'adet', 'olcek', 'doz'] as const;
+export type DoseUnit = (typeof DOSE_UNITS)[number];
+
+export const SCHEDULE_TYPES = ['as_needed', 'interval', 'fixed_times'] as const;
+export type ScheduleType = (typeof SCHEDULE_TYPES)[number];
+
+/**
+ * Bir ilaç/kür tanımı.
+ *
+ * `last_dose_at`, `next_due_at` ve `today_given` **türetilmiş** alanlardır:
+ * yalnızca liste ucundan gelir, saklanmazlar (doz silinince ya da saati
+ * düzeltilince saklanan bir "sonraki doz" sessizce yanlışa düşerdi).
+ */
+export type Medication = {
+  id: number;
+  baby_id: number;
+  name: string;
+  form: MedicationForm;
+  strength: string | null;
+  route: MedicationRoute;
+  default_amount: number | null;
+  amount_unit: DoseUnit;
+  schedule_type: ScheduleType;
+  fixed_times: string[] | null;
+  interval_hours: number | null;
+  min_interval_hours: number | null;
+  max_doses_per_day: number | null;
+  started_on: string;
+  ends_on: string | null;
+  prescriber: string | null;
+  reason: string | null;
+  note: string | null;
+  status: 'active' | 'finished' | 'stopped';
+  creator_name?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  last_dose_at?: string | null;
+  next_due_at?: string | null;
+  today_given?: number;
+};
+
+export type MedicationDose = {
+  id: number;
+  baby_id: number;
+  medication_id: number | null;
+  name: string;
+  given_at: string;
+  amount: number | null;
+  amount_unit: DoseUnit;
+  status: 'given' | 'skipped';
+  /** Minimum aralıktan önce verildi — kayıt reddedilmez, işaretlenir (§3b). */
+  is_early: boolean;
+  skip_reason: string | null;
+  note: string | null;
+  entry_source: 'manual' | 'timer' | 'notification' | 'task';
+  creator_name?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type MedicationInput = {
+  name: string;
+  form?: MedicationForm;
+  strength?: string | null;
+  route?: MedicationRoute;
+  default_amount?: number | null;
+  amount_unit?: DoseUnit;
+  schedule_type?: ScheduleType;
+  fixed_times?: string[] | null;
+  interval_hours?: number | null;
+  min_interval_hours?: number | null;
+  max_doses_per_day?: number | null;
+  started_on: string;
+  ends_on?: string | null;
+  prescriber?: string | null;
+  reason?: string | null;
+  note?: string | null;
+};
+
+export type DoseInput = {
+  medication_id?: number | null;
+  /** Kür seçilmediyse zorunlu. */
+  name?: string;
+  given_at: string;
+  amount?: number | null;
+  amount_unit?: DoseUnit;
+  status?: 'given' | 'skipped';
+  skip_reason?: string | null;
+  note?: string | null;
+  entry_source?: 'manual' | 'timer' | 'notification' | 'task';
+};
+
+/** Sıradaki doz özeti — bildirim planlayıcısının okuduğu biçim. */
+export type MedicationDue = {
+  medication_id: number;
+  name: string;
+  amount: number | null;
+  amount_unit: DoseUnit;
+  next_due_at: string;
+  last_dose_at: string | null;
+};
+
+export const medicationService = {
+  list: (babyId: Id, status: 'active' | 'finished' | 'stopped' | 'all' = 'all') =>
+    api.get<{ medications: Medication[] }>(babyPath(babyId, '/medications'), {
+      query: { status, tz_offset_min: tzOffsetMin() },
+    }),
+
+  due: (babyId: Id) =>
+    api.get<{ due: MedicationDue[] }>(babyPath(babyId, '/medications/due'), {
+      query: { tz_offset_min: tzOffsetMin() },
+    }),
+
+  create: (babyId: Id, body: MedicationInput) =>
+    api.post<{ medication: Medication }>(babyPath(babyId, '/medications'), body),
+
+  update: (id: Id, body: Partial<MedicationInput> & { status?: Medication['status'] }) =>
+    api.put<{ medication: Medication }>(`/medications/${id}`, body),
+
+  /** Kürü bitirir; silmez — biten kür geçmişin parçası. */
+  finish: (id: Id, status: 'finished' | 'stopped' = 'finished') =>
+    api.post<{ medication: Medication }>(`/medications/${id}/finish`, { status }),
+
+  remove: (id: Id) => api.delete<{ deleted: boolean }>(`/medications/${id}`),
+
+  doses: (babyId: Id, opts: { medicationId?: Id; from?: string; to?: string; limit?: number } = {}) =>
+    api.get<{ doses: MedicationDose[] }>(babyPath(babyId, '/medication-doses'), {
+      query: {
+        ...(opts.medicationId ? { medication_id: opts.medicationId } : {}),
+        ...(opts.from ? { from: opts.from } : {}),
+        ...(opts.to ? { to: opts.to } : {}),
+        ...(opts.limit ? { limit: opts.limit } : {}),
+      },
+    }),
+
+  /**
+   * Doz kaydı. Yanıt `warnings` taşıyabilir (erken doz, günlük sınır, biten
+   * kür): bunlar **hata değil** — kayıt yazılmıştır, ekran uyarıyı gösterir.
+   */
+  addDose: (babyId: Id, body: DoseInput) =>
+    api.post<{ dose: MedicationDose; warnings: string[] }>(
+      babyPath(babyId, '/medication-doses'),
+      { ...body, tz_offset_min: tzOffsetMin() },
+    ),
+
+  updateDose: (id: Id, body: Partial<DoseInput>) =>
+    api.put<{ dose: MedicationDose }>(`/medication-doses/${id}`, {
+      ...body, tz_offset_min: tzOffsetMin(),
+    }),
+
+  removeDose: (id: Id) => api.delete<{ deleted: boolean }>(`/medication-doses/${id}`),
 };

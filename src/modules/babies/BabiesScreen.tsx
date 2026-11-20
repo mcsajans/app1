@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { BabyAvatar } from '../../components/BabyBar';
-import { Button, Card, EmptyState, FormError, Screen, SectionTitle } from '../../components/ui';
+import { Button, ButtonRow, Card, EmptyState, FormError, Screen, SectionTitle } from '../../components/ui';
+import { showAdAfterAction } from '../../core/ads/adService';
 import { errorText } from '../../core/api/client';
 import { familyService } from '../../core/api/modules';
+import { navigateTo } from '../../core/navigation/navigationRef';
 import { refreshAll } from '../../core/sync/refreshAll';
 import { useBabyStore } from '../../core/stores/useBabyStore';
 import { calcAge, calcCorrectedAge } from '../../core/utils/age';
@@ -55,6 +57,34 @@ export default function BabiesScreen() {
   const [error, setError] = useState<string | null>(null);
   const [joined, setJoined] = useState<string | null>(null);
 
+  /**
+   * Listeden bir bebeğe dokunmak: aktif bebeği değiştirir ve **ana sayfaya
+   * götürür**.
+   *
+   * Önceden yalnızca seçimi değiştiriyordu; kullanıcı aynı listede kalıyor
+   * ve "seçtim de ne oldu?" sorusuyla baş başa kalıyordu. Bebek değişiminin
+   * karşılığı o bebeğin ana sayfası: anlık durum kartları, ızgara ve akış
+   * zaten orada.
+   *
+   * Reklam yalnızca **gerçekten değiştiyse** gösteriliyor (`baby_switch`
+   * tetiği, panelden kapatılabilir). Zaten aktif olan bebeğe dokunmak bir
+   * değişim değil, kısayol — tek bebeği olan kullanıcıya her dokunuşta
+   * reklam açmak olurdu.
+   */
+  const openBaby = (id: number) => {
+    const changed = id !== selectedId;
+    void (async () => {
+      try {
+        if (changed) await selectBaby(id);
+      } catch (err) {
+        setError(errorText(err));
+        return;
+      }
+      navigateTo('home');
+      if (changed) showAdAfterAction('baby_switch');
+    })();
+  };
+
   const backToList = () => {
     setMode('list');
     setEditing(null);
@@ -72,7 +102,10 @@ export default function BabiesScreen() {
     setBusy(true);
     setError(null);
     try {
-      await withSaveFeedback(() => familyService.accept({ code: value }));
+      // Paylaşım koduyla katılmak da bir "bebek ekleme": tetiği o.
+      await withSaveFeedback(
+        () => familyService.accept({ code: value }), undefined, 'baby_switch',
+      );
       // Bebek listesi sunucudan yeniden çekilmeli; yeni bebek ancak
       // tazelemeden sonra yerel aynaya düşer.
       await refreshAll({ includePrivate: true });
@@ -129,14 +162,17 @@ export default function BabiesScreen() {
           </Text>
 
           <View style={s.gap} />
-          <Button
-            label={busy ? 'Katılınıyor…' : 'Bebeğe katıl'}
-            onPress={() => void join()}
-            disabled={busy || code.trim().length === 0}
-          />
+          {/* "Vazgeç" eskiden kartın ALTINDA tek başına duruyordu; katılma
+              düğmesinin alternatifi olduğu için yanına alındı. */}
+          <ButtonRow>
+            <Button
+              label={busy ? 'Katılınıyor…' : 'Bebeğe katıl'}
+              onPress={() => void join()}
+              disabled={busy || code.trim().length === 0}
+            />
+            <Button label="Vazgeç" variant="ghost" onPress={backToList} disabled={busy} />
+          </ButtonRow>
         </Card>
-
-        <Button label="Vazgeç" variant="ghost" onPress={backToList} disabled={busy} />
       </Screen>
     );
   }
@@ -223,7 +259,7 @@ export default function BabiesScreen() {
             return (
               <Pressable
                 key={b.id}
-                onPress={() => selectBaby(b.id)}
+                onPress={() => openBaby(b.id)}
                 style={({ pressed }) => [s.row, active && s.rowActive, pressed && s.rowPressed]}
                 accessibilityRole="button"
                 accessibilityState={{ selected: active }}
@@ -260,6 +296,11 @@ export default function BabiesScreen() {
                 </View>
                 {canEdit ? (
                   <Pressable
+                    /*
+                      İç içe `Pressable`: dokunuşu bu alır, dıştaki satır
+                      çalışmaz — yani "Düzenle" ne bebeği değiştirir, ne ana
+                      sayfaya götürür, ne de reklam açar.
+                    */
                     onPress={() => {
                       setEditing(b);
                       setMode('edit');

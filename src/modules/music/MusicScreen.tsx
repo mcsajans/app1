@@ -6,7 +6,9 @@ import { musicService, type Track } from '../../core/api/modules';
 import { FADE_MS, useMusicStore } from '../../core/music/useMusicStore';
 import { useAsyncData } from '../../core/hooks/useAsyncData';
 import { Chips, formatDuration } from '../../components/records';
-import { Button, Card, EmptyState, FormError, Loading, Screen, SectionTitle } from '../../components/ui';
+import {
+  Button, ButtonRow, Card, EmptyState, FormError, Loading, Screen, SectionTitle,
+} from '../../components/ui';
 import { Icon } from '../../components/Icon';
 import { colors, radius, spacing, typography } from '../../core/theme';
 
@@ -117,33 +119,28 @@ export default function MusicScreen() {
             <Text style={s.hint}>Parça sunucudan indiriliyor, ilk ses birazdan başlayacak.</Text>
           ) : null}
 
-          <View style={s.controls}>
-            <View style={s.controlCol}>
-              <Button
-                label={status.playing ? '⏸ Duraklat' : '▶ Çal'}
-                onPress={() => useMusicStore.getState().toggle()}
-              />
-            </View>
-            <View style={s.controlCol}>
-              <Button
-                label={loop ? 'Döngü açık' : 'Döngü kapalı'}
-                variant="ghost"
-                onPress={() => useMusicStore.getState().setLoop(!loop)}
-              />
-            </View>
-          </View>
-
           {/*
-            Durdur, duraklatmadan ayrı bir eylem: oturumu tamamen kapatır,
-            çaları bırakır ve bildirim çubuğundaki denetimleri kaldırır.
-            Duraklatılmış bir ninni bildirimde durmaya devam ediyor — onu
-            oradan da kaldırmanın yolu bu düğme ya da bildirimi kaydırmak.
+            Üç denetim tek satırda. "Durdur" eskiden satırın ALTINDA tek
+            başına duruyordu; duraklatmadan ayrı bir eylem (oturumu tamamen
+            kapatır, çaları bırakır, bildirim denetimlerini kaldırır) ama
+            yeri diğer iki denetimin yanı.
           */}
-          <Button
-            label="■ Durdur"
-            variant="ghost"
-            onPress={() => useMusicStore.getState().stop()}
-          />
+          <ButtonRow>
+            <Button
+              label={status.playing ? '⏸ Duraklat' : '▶ Çal'}
+              onPress={() => useMusicStore.getState().toggle()}
+            />
+            <Button
+              label={loop ? 'Döngü açık' : 'Döngü kapalı'}
+              variant="ghost"
+              onPress={() => useMusicStore.getState().setLoop(!loop)}
+            />
+            <Button
+              label="■ Durdur"
+              variant="ghost"
+              onPress={() => useMusicStore.getState().stop()}
+            />
+          </ButtonRow>
 
           <Text style={s.label}>Uyku zamanlayıcı</Text>
           <Chips
@@ -239,8 +236,6 @@ const s = StyleSheet.create({
   nowTitle: { ...typography.h3, color: colors.text },
   nowArtist: { ...typography.small, color: colors.textSoft },
   time: { ...typography.small, color: colors.textFaint, fontVariant: ['tabular-nums'] },
-  controls: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
-  controlCol: { flex: 1 },
   filterRow: { flexDirection: 'row' },
   favBtn: {
     paddingHorizontal: spacing.md,

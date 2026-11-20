@@ -1,12 +1,13 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Icon, type IconName } from '../components/Icon';
 import { colors, moduleTint, radius, shadow, spacing, typography } from '../core/theme';
 import {
   bottleService, breastfeedingService, localDate, sleepService, taskService, timelineService,
-  type Task, type TimelineEntry,
+  vaccineService, type Task, type TimelineEntry,
 } from '../core/api/modules';
+import { useInboxStore } from '../core/notifications/useInboxStore';
 import { MODULE_BY_KEY, isModuleActive, topLevelModules } from '../core/modules/catalog';
 import type { ModuleKey } from '../core/modules/types';
 import { useModuleStore } from '../core/modules/useModuleStore';
@@ -35,6 +36,7 @@ const TRACK_OF: Record<string, string> = {
   feeding: colors.trackFeeding,
   sleep: colors.trackSleep,
   diaper: colors.trackDiaper,
+  medication: colors.trackOther,
   music: colors.trackOther,
   notification: colors.trackOther,
 };
@@ -43,17 +45,18 @@ const TINT_OF: Record<string, string> = {
   feeding: moduleTint.bottle,
   sleep: moduleTint.sleep,
   diaper: moduleTint.diaper,
+  medication: moduleTint.medication,
   music: moduleTint.music,
   notification: moduleTint.reminders,
 };
 
 const ICON_OF: Record<string, IconName> = {
-  feeding: 'bottle', sleep: 'night', diaper: 'diaper',
+  feeding: 'bottle', sleep: 'night', diaper: 'diaper', medication: 'medication',
   music: 'music', notification: 'reminders',
 };
 
 const LABEL_OF: Record<string, string> = {
-  feeding: 'Beslenme', sleep: 'Uyku', diaper: 'Bez Değişimi',
+  feeding: 'Beslenme', sleep: 'Uyku', diaper: 'Bez Değişimi', medication: 'İlaç',
   music: 'Müzik', notification: 'Bildirim',
 };
 
@@ -116,6 +119,32 @@ export default function HomeScreen() {
    * çağrılsaydı durum kartlarına dokunmak sessizce hiçbir şey yapmazdı.
    */
   const open = (key: ModuleKey) => openModule(key, MODULE_BY_KEY[key]?.parent);
+
+  /*
+   * Eksik aşı hatırlatması — ana sayfa açıldığında bir kez.
+   *
+   * Sunucu karar veriyor (`POST /vaccines/remind-missing`): bebek bir aylıktan
+   * büyükse ya da profil yeni eklendiyse, planlanan günü geçmiş ve hâlâ
+   * girilmemiş aşı varsa bildirim merkezine bir satır düşüyor. Uç idempotent
+   * — aynı bebek için 24 saatte bir satır.
+   *
+   * Oturum başına bebek başına **tek çağrı**: ana sayfa gezinmede defalarca
+   * yeniden çiziliyor ve her çizimde ağa çıkmanın anlamı yok. Bildirim
+   * yazıldıysa rozet hemen tazeleniyor, yoksa dokunulmuyor.
+   */
+  const remindedFor = useRef<number | null>(null);
+  useEffect(() => {
+    if (babyId === null || remindedFor.current === babyId) return;
+    remindedFor.current = babyId;
+    void vaccineService
+      .remindMissing(babyId)
+      .then((res) => {
+        if (res.notified) void useInboxStore.getState().refreshBadge();
+      })
+      // Hatırlatma, ana sayfanın çalışmasını etkilemez: ağ yoksa ya da uç
+      // bir sebeple düşerse sessizce geçilir.
+      .catch(() => undefined);
+  }, [babyId]);
 
   if (!selected) {
     return (
@@ -272,7 +301,14 @@ export default function HomeScreen() {
               tint={TINT_OF[e.kind] ?? colors.surfaceSoft}
               icon={ICON_OF[e.kind] ?? '•'}
               title={LABEL_OF[e.kind] ?? e.kind}
-              subtitle={subtypeLabel(e.subtype)}
+              /* İlaçta alt satır ad + doz; görünüm ikisini ayrı sütunda
+                 taşıyor (bkz. migrations/027). */
+              subtitle={
+                e.kind === 'medication'
+                  ? [e.note, e.amount_ml === null ? null : `${e.amount_ml} ${subtypeLabel(e.subtype) ?? ''}`.trim()]
+                    .filter(Boolean).join(' · ') || undefined
+                  : subtypeLabel(e.subtype)
+              }
               right={rightLines(e)}
               onPress={() => open('timeline')}
             />

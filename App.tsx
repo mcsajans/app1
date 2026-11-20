@@ -12,8 +12,9 @@ import {
 import { migrate } from './src/core/db';
 import { useAuthStore } from './src/core/auth/useAuthStore';
 import { initAds, watchAdSettings } from './src/core/ads/adService';
-import { useAdSettingsStore } from './src/core/ads/useAdSettingsStore';
+import { bannerAllowed, useAdSettingsStore } from './src/core/ads/useAdSettingsStore';
 import { useBrandingStore } from './src/core/branding/useBrandingStore';
+import { useConsentStore } from './src/core/consents/useConsentStore';
 import { MODULE_BY_KEY } from './src/core/modules/catalog';
 import { useModuleStore } from './src/core/modules/useModuleStore';
 import { useInboxStore } from './src/core/notifications/useInboxStore';
@@ -34,7 +35,10 @@ import { RootNavigator } from './src/core/navigation/RootNavigator';
 import { AccountDrawer } from './src/components/AccountDrawer';
 import { BabyBar } from './src/components/BabyBar';
 import { BottomNav, NAV_SPACE, type NavKey } from './src/components/BottomNav';
+import { ConsentGate } from './src/components/ConsentGate';
 import { BottomNavSpaceContext } from './src/components/bottomNavSpace';
+import { AdBannerBar } from './src/components/AdBannerBar';
+import { useBannerStore } from './src/core/ads/useBannerStore';
 import { NotificationSheet } from './src/components/NotificationSheet';
 import { PermissionsSheet } from './src/components/PermissionsSheet';
 import { SplashBounce } from './src/components/SplashBounce';
@@ -112,6 +116,12 @@ function AppShell() {
      * görürdü — başkasının bildirimini göstermek kabul edilemez.
      */
     useInboxStore.getState().clear();
+    /*
+     * Yasal onay durumu da kullanıcıya ait: önceki hesabın "onayladı"
+     * bilgisiyle yeni hesabı içeri almak kabul edilemez. `refreshAll` taze
+     * durumu getirene kadar `checked` false kalır.
+     */
+    useConsentStore.getState().reset();
 
     let cancelled = false;
     (async () => {
@@ -172,6 +182,21 @@ function AppShell() {
  */
 function SignedInShell() {
   const insets = useSafeAreaInsets();
+
+  /*
+   * Alt banner reklamı (AdBannerBar) kabukta, gezinme çubuğunun ALTINDA
+   * duruyor ve kullanım alanını gerçekten daraltıyor:
+   *  - gezinme çubuğu `bottomOffset` kadar yukarı kayar,
+   *  - ekranlar `BottomNavSpaceContext` üzerinden o kadar daha alt pay bırakır.
+   *
+   * Ölçülen yükseklik yalnızca çubuk GÖRÜNÜRKEN kullanılıyor; panel kapalıyken
+   * ya da reklam yüklenemediğinde depoda kalan bayat değer hesaba girmiyor.
+   */
+  const adConfig = useAdSettingsStore((st) => st.config);
+  const adFailed = useBannerStore((st) => st.failed);
+  const adHeight = useBannerStore((st) => st.height);
+  const adVisible = bannerAllowed(adConfig) && !adFailed;
+  const adSpace = adVisible ? adHeight : 0;
   const [accountOpen, setAccountOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
   const [inboxOpen, setInboxOpen] = useState(false);
@@ -181,6 +206,14 @@ function SignedInShell() {
    * sormanın karşılığı yok ve ilk izlenim giriş akışını uzatırdı.
    */
   const [permsOpen, setPermsOpen] = useState(false);
+
+  /**
+   * Zorunlu onay eksikse kabuk çizilir ama üzerine kapatılamayan onay
+   * penceresi biner. Ekranı tamamen onay penceresiyle değiştirmek yerine
+   * böyle: sunucudan cevap gelene kadar (`checked` false) uygulama normal
+   * çalışır, ağı olmayan kullanıcı kendi verisinden kilitlenmez.
+   */
+  const consentsBlocked = useConsentStore((st) => st.checked && st.pending.length > 0);
 
   useEffect(() => {
     void (async () => {
@@ -236,12 +269,19 @@ function SignedInShell() {
         ekranlar onu hesaba katar, üstünde açılan Modal sayfalar katmaz.
       */}
       <SafeAreaInsetsContext.Provider value={{ ...insets, top: 0 }}>
-        <BottomNavSpaceContext.Provider value={NAV_SPACE}>
+        <BottomNavSpaceContext.Provider value={NAV_SPACE + adSpace}>
           <NavigationContainer
             ref={navigationRef}
             // Kullanıcı geri tuşuyla ya da bir kutudan gezindiğinde çubuğun
             // seçili sekmesi gerçek ekranla uyumlu kalmalı.
             onStateChange={(state) => {
+              /*
+               * Ekran değişiminde banner geri açılır: kullanıcı bir ekranda
+               * yer açmak için kapatabilsin ama kapalı kalıp unutulmasın
+               * (istek: "her ekran değişiminde kapatıldıysa açılsın").
+               * Başarısız bir yükleme de burada yeniden deneniyor.
+               */
+              useBannerStore.getState().reopen();
               const name = state?.routes[state.index ?? 0]?.name;
               setNavKey(
                 name === 'home' || name === 'timeline' || name === 'reports'
@@ -255,12 +295,26 @@ function SignedInShell() {
         </BottomNavSpaceContext.Provider>
       </SafeAreaInsetsContext.Provider>
 
-      <BottomNav active={navKey} onNavigate={onNavigate} onQuickAdd={() => setQuickOpen(true)} />
+      <BottomNav
+        active={navKey}
+        onNavigate={onNavigate}
+        onQuickAdd={() => setQuickOpen(true)}
+        // Güvenli alan artık reklam çubuğunun dolgusunda; çubuk onun üstüne
+        // tam olarak reklam yüksekliği + inset kadar çıkar.
+        bottomOffset={adVisible ? adSpace + insets.bottom : 0}
+      />
+      <AdBannerBar />
 
       <AccountDrawer visible={accountOpen} onClose={closeAccount} />
       <QuickAddSheet visible={quickOpen} onClose={closeQuick} />
       <NotificationSheet visible={inboxOpen} onClose={closeInbox} />
       <PermissionsSheet visible={permsOpen} onClose={closePerms} />
+
+      {/*
+        Zorunlu yasal onayı eksik olan kullanıcı buradan ileri gidemez. İzin
+        sayfasının ÜSTÜNDE duruyor: onay alınmadan izin istemenin sırası yok.
+      */}
+      {consentsBlocked ? <ConsentGate /> : null}
 
       {/*
         Kaydetme penceresi en sonda: kabuktaki diğer alt sayfaların (hesap,

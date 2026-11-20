@@ -2,7 +2,10 @@ import React, { useState } from 'react';
 import { Alert, Pressable, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { Chips } from '../../components/records';
-import { Button, Card, EmptyState, FormError, Loading, Screen, SectionTitle } from '../../components/ui';
+import { BottomSheet } from '../../components/BottomSheet';
+import {
+  Button, ButtonRow, Card, EmptyState, FormError, Loading, Screen, SectionTitle,
+} from '../../components/ui';
 import { errorText } from '../../core/api/client';
 import {
   GRANTABLE_PERMISSIONS, RELATIONSHIPS, RELATIONSHIP_LABELS,
@@ -320,8 +323,10 @@ export default function FamilyScreen() {
             {freshCode.email} adresine ait. Bu kod bir daha gösterilmez — şimdi paylaş.
           </Text>
           <View style={s.gapXs} />
-          <Button label="Kodu paylaş" onPress={() => shareCode(freshCode.code)} />
-          <Button label="Kapat" variant="ghost" onPress={() => setFreshCode(null)} />
+          <ButtonRow>
+            <Button label="Kodu paylaş" onPress={() => shareCode(freshCode.code)} />
+            <Button label="Kapat" variant="ghost" onPress={() => setFreshCode(null)} />
+          </ButtonRow>
         </View>
       ) : null}
 
@@ -398,46 +403,8 @@ export default function FamilyScreen() {
             Davet et
           </SectionTitle>
 
-          {inviteOpen ? (
-            <Card>
-              <Text style={s.label}>E-posta *</Text>
-              <TextInput
-                style={s.input}
-                value={email}
-                onChangeText={setEmail}
-                placeholder="babasi@ornek.com"
-                placeholderTextColor={colors.textFaint}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-                editable={!busy}
-              />
-
-              <Text style={s.label}>Yakınlık</Text>
-              <Chips
-                options={RELATIONSHIPS}
-                value={relationship}
-                onChange={(v) => v && setRelationship(v)}
-                labels={RELATIONSHIP_LABELS}
-                disabled={busy}
-              />
-
-              <Text style={s.label}>Yetki</Text>
-              <Chips
-                options={GRANTABLE_PERMISSIONS}
-                value={permission}
-                onChange={(v) => v && setPermission(v)}
-                labels={GRANTABLE_LABELS}
-                disabled={busy}
-              />
-
-              <View style={s.gap} />
-              <Button label={busy ? 'Gönderiliyor…' : 'Davet oluştur'} onPress={sendInvite} disabled={busy} />
-              <Button label="Vazgeç" variant="ghost" onPress={() => setInviteOpen(false)} disabled={busy} />
-            </Card>
-          ) : (
-            <Button label="+ Aileye birini davet et" variant="ghost" onPress={() => setInviteOpen(true)} />
-          )}
+          {/* Davet formu alt sayfada; ekranda yalnızca düğme duruyor. */}
+          <Button label="+ Aileye birini davet et" onPress={() => setInviteOpen(true)} disabled={busy} />
 
           <Card>
             <Text style={s.label}>Bekleyen davetler</Text>
@@ -475,6 +442,50 @@ export default function FamilyScreen() {
       )}
 
       {incomingSection}
+
+      <BottomSheet
+        visible={inviteOpen}
+        busy={busy}
+        onClose={() => setInviteOpen(false)}
+        title="Aileye davet et"
+        subtitle="Davet 7 gün geçerlidir; e-posta ile eşleşmesi gerekir."
+      >
+        <Text style={s.label}>E-posta *</Text>
+              <TextInput
+                style={s.input}
+                value={email}
+                onChangeText={setEmail}
+                placeholder="babasi@ornek.com"
+                placeholderTextColor={colors.textFaint}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!busy}
+              />
+
+              <Text style={s.label}>Yakınlık</Text>
+              <Chips
+                options={RELATIONSHIPS}
+                value={relationship}
+                onChange={(v) => v && setRelationship(v)}
+                labels={RELATIONSHIP_LABELS}
+                disabled={busy}
+              />
+
+              <Text style={s.label}>Yetki</Text>
+              <Chips
+                options={GRANTABLE_PERMISSIONS}
+                value={permission}
+                onChange={(v) => v && setPermission(v)}
+                labels={GRANTABLE_LABELS}
+                disabled={busy}
+              />
+        <View style={s.gap} />
+        <ButtonRow>
+          <Button label={busy ? 'Gönderiliyor…' : 'Davet oluştur'} onPress={sendInvite} disabled={busy} />
+          <Button label="Vazgeç" variant="ghost" onPress={() => setInviteOpen(false)} disabled={busy} />
+        </ButtonRow>
+      </BottomSheet>
     </Screen>
   );
 }

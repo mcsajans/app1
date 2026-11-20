@@ -1,36 +1,42 @@
 import React, { useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
-  Chips, RecordRow, StatTile, TimerDisplay, clockOf, formatDuration, useElapsedSeconds,
+  RecordRow, StatTile, TimerDisplay, clockOf, formatDuration, useElapsedSeconds,
 } from '../../components/records';
 import { RecordDetailSheet, fullMoment, type RecordDetail } from '../../components/RecordDetail';
-import { Button, Card, EmptyState, FormError, Loading, Screen, SectionTitle } from '../../components/ui';
+import {
+  Button, Card, EmptyState, FormError, Loading, Screen, SectionTitle,
+} from '../../components/ui';
 import { ReadOnlyBanner, useCanEdit } from '../../components/permission';
+import { showAdAfterAction } from '../../core/ads/adService';
 import { errorText } from '../../core/api/client';
-import { STORAGE_LOCATIONS, iso, pumpingService, type PumpingRecord } from '../../core/api/modules';
+import { iso, pumpingService, type PumpingRecord } from '../../core/api/modules';
 import { useAsyncData } from '../../core/hooks/useAsyncData';
 import { useBabyStore } from '../../core/stores/useBabyStore';
 import { usePendingStop } from '../../core/timers/usePendingStop';
 import { useLiveTimerStore } from '../../core/timers/useLiveTimerStore';
 import { colors, radius, spacing, typography } from '../../core/theme';
 import { withSaveFeedback } from '../../core/feedback/withSaveFeedback';
+import { PumpingFormSheet, type PumpingFormValues } from './PumpingFormSheet';
+import { STORAGE_LABELS } from './labels';
 
-const STORAGE_LABELS: Record<string, string> = {
-  fridge: 'Buzdolabı', freezer: 'Dondurucu', used_immediately: 'Hemen verildi',
-};
-
-/** Modül 12 — Süt Sağma. */
+/**
+ * Modül 12 — Süt Sağma.
+ *
+ * Ekranda stok, kronometre ve geçmiş duruyor; miktar girişi "+ Sağma ekle"
+ * ile alt sayfada açılıyor. Form sabit dururken sağma biten anne miktarı
+ * girmek için ekranı tarıyordu.
+ */
 export default function PumpingScreen() {
   const baby = useBabyStore((s) => s.selected());
   const babyId = baby?.id ?? null;
 
   const canEdit = useCanEdit();
 
-  const [left, setLeft] = useState('');
-  const [right, setRight] = useState('');
-  const [storage, setStorage] = useState<(typeof STORAGE_LOCATIONS)[number]>('fridge');
-  const [note, setNote] = useState('');
+  /** Ekleme sayfası açık mı + her açılışta yeniden bağlama sayacı. */
+  const [formOpen, setFormOpen] = useState(false);
+  const [formSeq, setFormSeq] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<RecordDetail | null>(null);
@@ -91,43 +97,44 @@ export default function PumpingScreen() {
     stash.reload();
   };
 
-  const parse = (v: string): number | null => {
-    const t = v.trim().replace(',', '.');
-    if (t === '') return null;
-    const n = Number(t);
-    return Number.isFinite(n) ? n : NaN;
+  const openForm = () => {
+    setError(null);
+    setFormSeq((n) => n + 1);
+    setFormOpen(true);
   };
 
-  const save = async () => {
+  /**
+   * Alt sayfadan gelen kayıt.
+   *
+   * Reklam `withSaveFeedback`in varsayılan `save` tetiğinden geliyor.
+   * Sayfa yalnızca kayıt **geçtiyse** kapanıyor; hata durumunda girilen
+   * miktarlar kaybolmamalı.
+   */
+  const save = (v: PumpingFormValues) => {
     if (!babyId) return;
-    const l = parse(left);
-    const r = parse(right);
-    if (Number.isNaN(l) || Number.isNaN(r)) return setError('Miktarlar sayı olmalı.');
-    if (l === null && r === null) return setError('En az bir göğüs için miktar gir.');
-
-    setBusy(true);
-    setError(null);
-    try {
-      await withSaveFeedback(() => pumpingService.create(babyId, {
-        pumped_at: iso(),
-        left_amount_ml: l,
-        right_amount_ml: r,
-        storage_location: storage,
-        note: note.trim() || null,
-        // Kronometre kullanılmadıysa alan hiç gönderilmez; `null` göndermek
-        // kısmi güncellemede var olan süreyi silme riski taşıyor (§22.0).
-        ...(timedSec === null ? {} : { duration_sec: timedSec }),
-      }));
-      setLeft('');
-      setRight('');
-      setNote('');
-      setTimedSec(null);
-      refreshAll();
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setBusy(false);
-    }
+    void (async () => {
+      setBusy(true);
+      setError(null);
+      try {
+        await withSaveFeedback(() => pumpingService.create(babyId, {
+          pumped_at: iso(),
+          left_amount_ml: v.leftMl,
+          right_amount_ml: v.rightMl,
+          storage_location: v.storage,
+          note: v.note,
+          // Kronometre kullanılmadıysa alan hiç gönderilmez; `null` göndermek
+          // kısmi güncellemede var olan süreyi silme riski taşıyor (§22.0).
+          ...(timedSec === null ? {} : { duration_sec: timedSec }),
+        }));
+        setTimedSec(null);
+        setFormOpen(false);
+        refreshAll();
+      } catch (err) {
+        setError(errorText(err));
+      } finally {
+        setBusy(false);
+      }
+    })();
   };
 
   const toggleUsed = (r: PumpingRecord) => {
@@ -217,6 +224,21 @@ export default function PumpingScreen() {
       <ReadOnlyBanner />
       {error ? <FormError message={error} /> : null}
 
+      {/*
+        Ekleme düğmesi modülün EN ÜSTÜNDE: en sık yapılan iş o ve stok
+        kartıyla kronometrenin altında kaldığında her seferinde aşağı
+        kaydırmak gerekiyordu. Form alt sayfada açılıyor.
+      */}
+      <Button label="+ Sağma ekle" onPress={openForm} disabled={busy || !canEdit} />
+      {timedSec !== null ? (
+        <View style={s.timedRow}>
+          <Text style={s.timedText}>Ölçülen süre hazır: {formatDuration(timedSec)}</Text>
+          <Pressable onPress={() => setTimedSec(null)} hitSlop={8}>
+            <Text style={s.timedClear}>kaldır</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
       {/* ── Süt stoğu ── */}
       <SectionTitle hint="Hemen verilen süt stoğa girmez.">Süt stoğu</SectionTitle>
       <Card>
@@ -273,9 +295,20 @@ export default function PumpingScreen() {
             <Button
               label="Sağmaya başla"
               onPress={() => {
-                void useLiveTimerStore
-                  .getState()
-                  .startPumping(babyId, baby?.firstName ?? null);
+                void (async () => {
+                  await useLiveTimerStore
+                    .getState()
+                    .startPumping(babyId, baby?.firstName ?? null);
+                  /*
+                   * Sayaç başladıktan 3 saniye sonra tam ekran reklam
+                   * (`timer_start`, panelden kapatılabilir). Gecikme bu
+                   * çağrıya özel: pompayı kurup telefonu bırakan kullanıcıya
+                   * panelin 2 saniyesi kısa geliyor. Reklam `await`
+                   * edilmiyor ve hiç `throw` etmiyor — sayaç her hâlükârda
+                   * başlamış oluyor.
+                   */
+                  showAdAfterAction('timer_start', { delayMs: 3000 });
+                })();
               }}
               disabled={busy || !canEdit}
             />
@@ -283,60 +316,6 @@ export default function PumpingScreen() {
         )}
       </Card>
 
-      {/* ── Ekleme ── */}
-      <SectionTitle>Sağma ekle</SectionTitle>
-      <Card>
-        {timedSec !== null ? (
-          <View style={s.timedRow}>
-            <Text style={s.timedText}>Ölçülen süre: {formatDuration(timedSec)}</Text>
-            <Pressable onPress={() => setTimedSec(null)} hitSlop={8}>
-              <Text style={s.timedClear}>kaldır</Text>
-            </Pressable>
-          </View>
-        ) : null}
-        <View style={s.amountRow}>
-          <View style={s.amountCol}>
-            <Text style={s.label}>Sol (ml)</Text>
-            <TextInput
-              style={s.input}
-              value={left}
-              onChangeText={setLeft}
-              placeholder="60"
-              placeholderTextColor={colors.textFaint}
-              keyboardType="decimal-pad"
-              editable={!busy}
-            />
-          </View>
-          <View style={s.amountCol}>
-            <Text style={s.label}>Sağ (ml)</Text>
-            <TextInput
-              style={s.input}
-              value={right}
-              onChangeText={setRight}
-              placeholder="80"
-              placeholderTextColor={colors.textFaint}
-              keyboardType="decimal-pad"
-              editable={!busy}
-            />
-          </View>
-        </View>
-
-        <Text style={s.label}>Saklama yeri</Text>
-        <Chips options={STORAGE_LOCATIONS} value={storage} onChange={(v) => v && setStorage(v)} labels={STORAGE_LABELS} disabled={busy || !canEdit} />
-
-        <Text style={s.label}>Not</Text>
-        <TextInput
-          style={s.input}
-          value={note}
-          onChangeText={setNote}
-          placeholder="İsteğe bağlı"
-          placeholderTextColor={colors.textFaint}
-          editable={!busy}
-        />
-
-        <View style={s.gap} />
-        <Button label={busy ? 'Kaydediliyor…' : 'Kaydet'} onPress={save} disabled={busy || !canEdit} />
-      </Card>
 
       {/* ── Geçmiş ── */}
       <SectionTitle hint="Dokununca kullanıldı/stokta arasında geçer; uzun basıp silebilirsin.">
@@ -370,12 +349,22 @@ export default function PumpingScreen() {
       </Card>
 
       <RecordDetailSheet detail={detail} onClose={() => setDetail(null)} />
+
+      <PumpingFormSheet
+        key={formSeq}
+        visible={formOpen}
+        busy={busy}
+        error={formOpen ? error : null}
+        timedSec={timedSec}
+        onClearTimed={() => setTimedSec(null)}
+        onClose={() => setFormOpen(false)}
+        onSubmit={save}
+      />
     </Screen>
   );
 }
 
 const s = StyleSheet.create({
-  label: { ...typography.small, color: colors.textSoft, fontWeight: '600', marginTop: spacing.sm },
   hint: { ...typography.small, color: colors.textSoft },
   gap: { height: spacing.sm },
   tiles: { flexDirection: 'row', gap: spacing.sm },
@@ -395,14 +384,4 @@ const s = StyleSheet.create({
   },
   timedText: { ...typography.small, color: colors.primary, fontWeight: '700' },
   timedClear: { ...typography.tiny, color: colors.textSoft, fontWeight: '700' },
-  input: {
-    height: 50,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceSoft,
-    paddingHorizontal: spacing.md,
-    ...typography.body,
-    color: colors.text,
-  },
 });

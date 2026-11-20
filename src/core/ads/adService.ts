@@ -56,6 +56,35 @@ let canRequestAds = true;
  */
 let personalizedAllowed = true;
 
+/**
+ * Reklam sesi şu an kapalı mı.
+ *
+ * `setAppMuted` **genel** bir ayar: bir sonraki reklam da onunla açılır.
+ * Bu yüzden durum burada tutuluyor ve reklam kapanır kapanmaz geri
+ * açılıyor — yoksa uyku modülünde sessize alınan ses, bir sonraki kaydın
+ * reklamında da kapalı kalırdı.
+ */
+let audioMuted = false;
+
+/**
+ * Reklam sesini açar/kapatır.
+ *
+ * Google'ın uyarısı kayda değer: sesi kısmak video reklam uygunluğunu ve
+ * dolayısıyla geliri düşürüyor. Bu yüzden genel bir ayar değil, yalnızca
+ * **uyku modülünün** çağrılarında kullanılıyor (`muted: true`): orada
+ * amaç bebeği uyutmak ve tam ekran reklamın sesi tam ters etki yapıyor.
+ */
+function setAdAudioMuted(muted: boolean): void {
+  if (audioMuted === muted) return;
+  try {
+    MobileAds().setAppMuted(muted);
+    MobileAds().setAppVolume(muted ? 0 : 1);
+    audioMuted = muted;
+  } catch {
+    // Native modül yoksa sessizce geç; reklam zaten gösterilemeyecek.
+  }
+}
+
 /** Son gösterim zamanı (ms) ve bu oturumdaki gösterim sayısı — frekans sınırı. */
 let lastShownAt = 0;
 let shownThisSession = 0;
@@ -158,6 +187,8 @@ function build(cfg: AdConfig): void {
 
     unsubscribers.push(
       ad.addAdEventListener(AdEventType.CLOSED, () => {
+        // Ses her kapanışta geri açılır: sessizlik tek bir gösterime ait.
+        setAdAudioMuted(false);
         reload();
       }),
       ad.addAdEventListener(AdEventType.ERROR, () => {
@@ -439,13 +470,35 @@ async function askTrackingPermission(): Promise<boolean> {
 /* ──────────────────────────── dışa açılan uç ─────────────────────────────── */
 
 /**
+ * Tek bir gösterime özel ayarlar — ikisi de **isteğe bağlı**, verilmezse
+ * panel değerleri geçerli.
+ */
+export type AdOptions = {
+  /**
+   * Bu çağrı için gecikme (ms); panelin `action_delay_ms` değerini geçersiz
+   * kılar. Modül bazında farklı bir bekleme gerektiğinde kullanılır —
+   * uyku 3 sn, geri kalan her şey panelin değeri (2 sn).
+   */
+  delayMs?: number;
+  /**
+   * Reklam **sesi kapalı** açılsın. Uyku modülü için: bebeği uyutmaya
+   * çalışırken açılan reklamın sesi, modülün amacını bozar.
+   */
+  muted?: boolean;
+};
+
+/**
  * İşlem tamamlandıktan sonra çağrılır; panelde tanımlı gecikmenin ardından
- * (varsayılan 3 sn) reklamı dener.
+ * (varsayılan 2 sn) reklamı dener.
  *
  * `await` EDİLMEZ ve hata fırlatmaz. Çağıranın sözleşmesi tek satır: kayıt ya
  * da sayaç işlemi başarıyla bittikten **sonra** çağır.
+ *
+ * `opts` yalnızca modüle özgü sapmalar içindir (gecikme, sessizlik). Birim
+ * kimlikleri, frekans sınırı, oturum tavanı ve tetikleyici anahtarları
+ * **her zaman** panelden gelir; buradan geçersiz kılınamaz.
  */
-export function showAdAfterAction(trigger: AdTrigger = 'save'): void {
+export function showAdAfterAction(trigger: AdTrigger = 'save', opts: AdOptions = {}): void {
   const cfg = config();
 
   // Tetikleme anında da bakılıyor — kapalı bir sistemde boşuna zamanlayıcı
@@ -474,7 +527,11 @@ export function showAdAfterAction(trigger: AdTrigger = 'save'): void {
     }
 
     const showIt = () => {
+      // Ses durumu gösterimden HEMEN önce ayarlanıyor; `CLOSED` olayı geri
+      // açıyor. Gösterim hiç olmazsa da (aşağıdaki catch) geri açılır.
+      setAdAudioMuted(opts.muted === true);
       ad.show().catch(() => {
+        setAdAudioMuted(false);
         // Gösterim başarısız: örnek tükenmiş olabilir, yenisi yüklenir.
         reload();
       });
@@ -489,7 +546,11 @@ export function showAdAfterAction(trigger: AdTrigger = 'save'): void {
       return;
     }
     showIt();
-  }, cfg.action_delay_ms);
+    /*
+     * Gecikme: çağrının kendi değeri varsa o, yoksa panelinki. Negatif ya da
+     * saçma bir değer gelmesin diye alt sınır 0.
+     */
+  }, Math.max(0, opts.delayMs ?? cfg.action_delay_ms));
 }
 
 /**

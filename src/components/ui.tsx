@@ -63,8 +63,19 @@ export function SectionTitle({ children, hint }: { children: React.ReactNode; hi
 }
 
 export function Button({
-  label, onPress, variant = 'primary', disabled,
-}: { label: string; onPress: () => void; variant?: 'primary' | 'ghost' | 'danger'; disabled?: boolean }) {
+  label, onPress, variant = 'primary', disabled, compact,
+}: {
+  label: string;
+  onPress: () => void;
+  variant?: 'primary' | 'ghost' | 'danger';
+  disabled?: boolean;
+  /**
+   * Dar sütunda yan yana duran düğmeler için: yatay boşluk kısalır, yazı
+   * küçülür. Tek başına duran bir düğmede kullanılmaz; yalnızca üçte bir
+   * genişliğe sığması gereken satırlarda (örneğin emzirme sayacı) gerekir.
+   */
+  compact?: boolean;
+}) {
   const bg = variant === 'primary' ? colors.primary : variant === 'danger' ? colors.danger : 'transparent';
   const fg = variant === 'ghost' ? colors.primary : '#fff';
   return (
@@ -73,12 +84,47 @@ export function Button({
       disabled={disabled}
       style={({ pressed }) => [
         s.btn,
+        compact && s.btnCompact,
         { backgroundColor: bg, opacity: disabled ? 0.4 : pressed ? 0.85 : 1 },
         variant === 'ghost' && s.btnGhost,
       ]}
     >
-      <Text style={[s.btnText, { color: fg }]}>{label}</Text>
+      <Text style={[s.btnText, compact && s.btnTextCompact, { color: fg }]} numberOfLines={2}>
+        {label}
+      </Text>
     </Pressable>
+  );
+}
+
+/**
+ * Düğmeleri **yan yana** dizer — uygulamadaki tek düğme sırası biçimi.
+ *
+ * Eskiden her ekran kendi `row`/`col` stilini yazıyordu ve çoğu yerde
+ * düğmeler alt alta duruyordu; iki düğme alt alta bir kartın yarısını
+ * yiyor, üç düğme kartı okunmaz hâle getiriyordu. Satır ayrıca "bunlar
+ * birbirinin alternatifi" demenin görsel yolu: kaydet/vazgeç, verildi/atla.
+ *
+ * Çocuklara `compact` **otomatik** veriliyor: sütun genişliği yarıya
+ * (ya da üçte bire) indiği için 16 px kalın yazı taşıyordu; `compact`
+ * 14/18'e çekiyor ve etiket iki satıra sığıyor. Çağıran yine de kendi
+ * `compact` değerini geçerek bunu geçersiz kılabilir.
+ *
+ * `null` çocuklar elenir: `{koşul ? <Button/> : null}` kalıbı satırda boş
+ * bir sütun bırakmasın diye.
+ */
+export function ButtonRow({ children }: { children: React.ReactNode }) {
+  const items = React.Children.toArray(children).filter(Boolean);
+  if (items.length === 0) return null;
+  return (
+    <View style={s.btnRow}>
+      {items.map((child, index) => (
+        <View key={index} style={s.btnCol}>
+          {React.isValidElement<{ compact?: boolean }>(child)
+            ? React.cloneElement(child, { compact: child.props.compact ?? true })
+            : child}
+        </View>
+      ))}
+    </View>
   );
 }
 
@@ -107,7 +153,7 @@ export function Loading({ label = 'Yükleniyor…' }: { label?: string }) {
 export function Field({
   label, value, onChangeText, placeholder, error, secureTextEntry,
   keyboardType, autoCapitalize = 'none', autoComplete, textContentType, editable = true,
-  revealable = false,
+  revealable = false, maxLength,
 }: {
   label: string;
   value: string;
@@ -115,10 +161,16 @@ export function Field({
   placeholder?: string;
   error?: string | null;
   secureTextEntry?: boolean;
-  keyboardType?: 'default' | 'email-address';
+  /** `number-pad`: yalnızca rakam alan alanlar (6 haneli sıfırlama kodu). */
+  keyboardType?: 'default' | 'email-address' | 'number-pad';
   autoCapitalize?: 'none' | 'words' | 'sentences';
-  autoComplete?: 'email' | 'password' | 'name' | 'new-password' | 'off';
-  textContentType?: 'emailAddress' | 'password' | 'name' | 'newPassword' | 'none';
+  /**
+   * `one-time-code`: tek kullanımlık kod. İşletim sistemi e-postadan gelen
+   * kodu klavyenin üstünde önerebilsin diye.
+   */
+  autoComplete?: 'email' | 'password' | 'name' | 'new-password' | 'off' | 'one-time-code';
+  textContentType?:
+    | 'emailAddress' | 'password' | 'name' | 'newPassword' | 'none' | 'oneTimeCode';
   editable?: boolean;
   /**
    * Şifre alanına "şifremi göster" düğmesi ekler.
@@ -129,6 +181,8 @@ export function Field({
    * diye seçime bırakıldı.
    */
   revealable?: boolean;
+  /** Girilebilecek en fazla karakter — kod alanında 6. */
+  maxLength?: number;
 }) {
   const [revealed, setRevealed] = React.useState(false);
   const secure = !!secureTextEntry && !(revealable && revealed);
@@ -157,6 +211,7 @@ export function Field({
           autoComplete={autoComplete}
           textContentType={textContentType}
           editable={editable}
+          maxLength={maxLength}
           autoCorrect={false}
         />
         {showToggle ? (
@@ -179,6 +234,91 @@ export function Field({
         ) : null}
       </View>
       {error ? <Text style={s.fieldError}>{error}</Text> : null}
+    </View>
+  );
+}
+
+/**
+ * Tek satırlık onay kutusu — "şunu da yap" türü isteğe bağlı seçenekler için.
+ *
+ * `ConsentChecks` ile karıştırılmamalı: oradaki kutucuklar hukuki beyandır,
+ * metni panelden gelir ve yanında ayrı bir "metni oku" dokunma alanı taşır.
+ * Bu ise sıradan bir form denetimi (örneğin "sayacı önceki bir zamandan
+ * başlat"); tüm satır dokunulabilir, çünkü 22 px'lik kutucuğa nişan almak
+ * parmakla zor.
+ */
+export function CheckRow({
+  label,
+  checked,
+  onToggle,
+  disabled,
+}: {
+  label: string;
+  checked: boolean;
+  onToggle: (next: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={() => onToggle(!checked)}
+      disabled={disabled}
+      style={({ pressed }) => [s.checkRow, pressed && s.checkRowPressed, disabled && s.checkRowOff]}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked, disabled }}
+      accessibilityLabel={label}
+    >
+      <View style={[s.checkBox, checked && s.checkBoxOn]}>
+        {checked ? <Icon name="tick" size={15} color="#FFFFFF" /> : null}
+      </View>
+      <Text style={s.checkLabel}>{label}</Text>
+    </Pressable>
+  );
+}
+
+/**
+ * İkonlu sekme çubuğu — aynı kaydın iki ayrı GİRİŞ BİÇİMİ arasında seçim.
+ *
+ * `Chips` ile karıştırılmamalı: orada seçilen şey **veriye** yazılır (hangi
+ * meme, hangi uyku türü), burada seçilen şey yalnızca formun hangi hâlinin
+ * çizileceğini belirler. Bu yüzden görünümü de bir segment denetimi: iki
+ * yarım, aralarında boşluk yok, seçili olan dolu.
+ *
+ * Etiketler ikonla birlikte yazılır. Yalnızca ikon da yeterdi ama kronometre
+ * ile takvim-saat simgeleri küçük boyutta birbirine benziyor; iki kelime,
+ * yanlış sekmede form doldurup baştan başlamaktan ucuz.
+ */
+export function IconTabs<K extends string>({
+  tabs,
+  value,
+  onChange,
+  disabled,
+}: {
+  tabs: readonly { key: K; icon: IconName; label: string }[];
+  value: K;
+  onChange: (key: K) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <View style={s.tabs} accessibilityRole="tablist">
+      {tabs.map((t) => {
+        const on = t.key === value;
+        return (
+          <Pressable
+            key={t.key}
+            onPress={() => onChange(t.key)}
+            disabled={disabled}
+            style={({ pressed }) => [s.tab, on && s.tabOn, pressed && s.tabPressed]}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: on, disabled }}
+            accessibilityLabel={t.label}
+          >
+            <Icon name={t.icon} size={18} color={on ? colors.primary : colors.textSoft} />
+            <Text style={[s.tabLabel, on && s.tabLabelOn]} numberOfLines={1}>
+              {t.label}
+            </Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
@@ -209,8 +349,54 @@ const s = StyleSheet.create({
     height: 50, borderRadius: radius.lg,
     alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.lg,
   },
+  btnCompact: { paddingHorizontal: spacing.sm },
+  btnRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xs },
+  btnCol: { flex: 1 },
+  checkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  checkRowPressed: { opacity: 0.7 },
+  checkRowOff: { opacity: 0.4 },
+  checkBox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+  },
+  checkBoxOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  tabs: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    padding: 4,
+    borderRadius: radius.pill,
+    backgroundColor: colors.bg,
+  },
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    height: 40,
+    borderRadius: radius.pill,
+  },
+  tabOn: { backgroundColor: colors.surface, ...shadow.card },
+  tabPressed: { opacity: 0.7 },
+  tabLabel: { ...typography.small, color: colors.textSoft, fontWeight: '600' },
+  tabLabelOn: { color: colors.primary, fontWeight: '700' },
+  checkLabel: { ...typography.body, color: colors.text, flex: 1 },
   btnGhost: { borderWidth: 1.5, borderColor: colors.primary },
-  btnText: { ...typography.h3 },
+  btnText: { ...typography.h3, textAlign: 'center' },
+  // İki satıra taşan etiket (örneğin "Emzirmeyi bitir") 50 px yüksekliği
+  // aşmasın diye satır yüksekliği de kısılır.
+  btnTextCompact: { fontSize: 14, lineHeight: 18 },
   empty: { alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xxl },
 
   emptyTitle: { ...typography.h3, color: colors.text, textAlign: 'center' },

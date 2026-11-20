@@ -64,3 +64,28 @@ Sen kıdemli bir Full-Stack Yazılım Mimarısın. Projemizde Bebek & Çocuk Tak
 2. **Adım 2:** Tamamlanan backend API'lerinin detaylarını ve şemasını `teknik_dokuman.md` dosyasına kaydet.
 3. **Adım 3:** React Native projesine geç; `taskService` katmanını, mama tarif parametrelerinin validasyonlarını kurgula.
 4. **Adım 4:** Görev oluşturma formu (mama/su miktarları girdi alanları dahil), görev listesi ve tamamlama aksiyonu UI bileşenlerini geliştirip test et.
+
+---
+
+## Reklam davranışı (2026-11-21)
+
+| Eylem | Tetik |
+|-------|-------|
+| "+ Yeni görev" → Görevi oluştur | `save` |
+| Görevi düzenle → Değişiklikleri kaydet | `save` |
+| "Tamamlandı" | `complete` |
+
+`complete` panelde ayrı bir anahtar: görev tamamlamak doğal bir bitiş noktası
+ve geçiş reklamının en uygun olduğu yerlerden biri.
+
+Ortak kurallar (ayrıntı: `TEKNIK_DOKUMAN.md` §23):
+
+- Tetikleyici panelden açılıp kapatılır (`/admin/ads`); ana anahtar kapalıyken
+  hiçbir istek atılmaz.
+- Reklam **kayıttan sonra** ve `await` edilmeden çağrılır; hiç `throw` etmez.
+  Kayıt hiçbir koşulda reklamdan etkilenmez.
+- Frekans sınırı (varsayılan 3 dk) ve oturum tavanı (5) her tetiği kapsar;
+  ninni çalarken, uygulama arka plandayken ve kaydetme onay penceresi
+  açıkken gösterim atlanır.
+- Ekranın altındaki **sabit banner** ayrı bir iş: tetikleyiciye bağlı değil,
+  her ekranda duruyor (§23.7).

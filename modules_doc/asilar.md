@@ -68,3 +68,71 @@ Sen kıdemli bir Full-Stack Yazılım Mimarısın. Projemizde Bebek & Çocuk Tak
 4. **Adım 4:** Aşı takvimi ekranı, aşı randevu/yer ekleme modalı, görev atama bağlantısı ve "Diğer Aşı" ekleme UI bileşenlerini geliştirip test et.
 
 Sırasıyla bu adımları takip ederek geliştirmeye başla.
+
+---
+
+## Reklam davranışı (2026-11-21)
+
+| Eylem | Tetik |
+|-------|-------|
+| Randevuyu kaydet | `save` |
+| "Yapıldı olarak işaretle" | `complete` |
+| Takvime aşı ekle | `save` |
+
+Aşı **bildirimleri** (7 gün / 2 gün / 1 gün önce) ve cihaz takvimi kaydı
+reklamla ilgisiz. Eksik aşı hatırlatması (bildirim merkezine düşen satır) da
+reklam tetiklemez.
+
+Ortak kurallar (ayrıntı: `TEKNIK_DOKUMAN.md` §23):
+
+- Tetikleyici panelden açılıp kapatılır (`/admin/ads`); ana anahtar kapalıyken
+  hiçbir istek atılmaz.
+- Reklam **kayıttan sonra** ve `await` edilmeden çağrılır; hiç `throw` etmez.
+  Kayıt hiçbir koşulda reklamdan etkilenmez.
+- Frekans sınırı (varsayılan 3 dk) ve oturum tavanı (5) her tetiği kapsar;
+  ninni çalarken, uygulama arka plandayken ve kaydetme onay penceresi
+  açıkken gösterim atlanır.
+- Ekranın altındaki **sabit banner** ayrı bir iş: tetikleyiciye bağlı değil,
+  her ekranda duruyor (§23.7).
+
+---
+
+## Ek Geliştirme — Eksik aşı hatırlatması (2026-11-21)
+
+**Girilmemiş aşılar bildirim merkezine düşüyor.** Ana sayfa açıldığında
+istemci `POST /babies/{id}/vaccines/remind-missing` çağırıyor; sunucu
+koşulları değerlendirip gerekirse bildirim yazıyor.
+
+### Koşullar
+
+| Koşul | Değer |
+|-------|-------|
+| Bebek yaşı | **30 günden büyük** |
+| ya da profil yeni eklendi | son **7 gün** içinde (doğumdaki Hepatit B / BCG için) |
+| Girilmemiş aşı | `status = 'pending'` **ve** planlanan gün geçmiş |
+| Tekrar | aynı kullanıcı + bebek için **24 saatte bir** |
+
+`skipped` (bilinçli atlama) ve `completed` sayılmıyor — ikisini hatırlatmak
+kullanıcıya kendi kararını tekrar sormak olurdu.
+
+### Neden böyle
+
+- **Sunucuda yazılıyor**, çünkü bildirim merkezi sunucudaki `notifications`
+  tablosu (§22.13): kullanıcı telefon değiştirse de hatırlatma duruyor.
+- **İstemci tetikliyor**, çünkü "bugün" cihazın saat diliminde anlamlı ve
+  hatırlatmanın doğal anı ana sayfanın açılması. Her gece çalışan bir
+  zamanlanmış iş, çalışmadığı gün sessizce hiçbir şey yapmazdı.
+- **Uç idempotent.** Ana sayfa günde onlarca kez açılıyor; `notifyUser`'ın
+  `dedupeHours: 24` kapısı olmasa merkez aynı satırla dolardı. İstemci ayrıca
+  oturum başına bebek başına tek çağrı yapıyor.
+
+### Bildirim
+
+Başlık "Eksik aşı kaydı", gövde en eski üç aşının adı (doz numarasıyla) ve
+"+N aşı daha"; dokununca **Aşı Takibi** ekranı açılıyor. Aktörü yok
+(`actor_user_id = NULL`): bunu bir aile üyesi değil, sistemin kendisi
+söylüyor.
+
+Yeni sunucu yardımcısı: `notifyUser()` (`src/services/notifications.ts`) —
+`notifyFamily`den farkı, olayı yapanı dışlamak yerine **tek bir kullanıcıya**
+yazması ve başlığa göre tekrarı engelleyebilmesi.

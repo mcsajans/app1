@@ -1,7 +1,21 @@
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 
 export const APP_NAME = 'Bebiqa';
-export const APP_VERSION = '1.0.0';
+
+/**
+ * Uygulama sürümü — **`app.json`'dan** okunur, burada sabit tutulmaz.
+ *
+ * Değer üç yere gidiyor: hesap panelindeki sürüm satırı, cihaz kaydı
+ * (`app_version`) ve yasal onay kaydı. Elle yazıldığı sürümde yayına çıkarken
+ * `app.json` güncellenip burası unutulabiliyordu; sunucu logları o zaman
+ * mağazadaki sürümden farklı bir numara gösterirdi ve "hangi sürümde
+ * oluyor" sorusunun cevabı yanlış olurdu.
+ *
+ * `expoConfig` yalnızca derleme sırasında gömülen manifest'ten gelir; çok
+ * eski bir çalışma zamanında boş dönebileceği için yedek değer duruyor.
+ */
+export const APP_VERSION = Constants.expoConfig?.version ?? '1.0.0';
 export const DB_NAME = 'bebiqa.db';
 
 /* ------------------------------------------------------------------ API */

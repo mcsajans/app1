@@ -9,7 +9,7 @@ import { useBabyStore, type BabyInput, type PhotoFile } from '../../core/stores/
 import { Icon } from '../../components/Icon';
 import { colors, radius, spacing, typography } from '../../core/theme';
 import { DateField, TimeField } from '../../components/DateTimeField';
-import { Button, FormError } from '../../components/ui';
+import { Button, ButtonRow, FormError } from '../../components/ui';
 import { BLOOD_TYPES, type Baby, type BloodType, type Gender } from '../../core/types';
 import { withSaveFeedback } from '../../core/feedback/withSaveFeedback';
 
@@ -190,10 +190,19 @@ export function BabyForm({ baby, onDone }: { baby?: Baby; onDone: () => void }) 
        * fotoğraf — ve ağ zayıfken ikincisi düşerse bebek fotoğrafsız
        * kalıyordu.
        */
-      await withSaveFeedback(async () => {
-        if (editing) await updateBaby(baby.id, input, photo);
-        else await addBaby(input, photo);
-      });
+      /*
+       * Reklam tetiği forma göre değişiyor: YENİ bebek eklemek bir
+       * "bebek değişimi" (`baby_switch`, panelden ayrı açılıp kapanıyor),
+       * var olan profili düzenlemek ise sıradan bir kayıt (`save`).
+       */
+      await withSaveFeedback(
+        async () => {
+          if (editing) await updateBaby(baby.id, input, photo);
+          else await addBaby(input, photo);
+        },
+        undefined,
+        editing ? 'save' : 'baby_switch',
+      );
 
       onDone();
     } catch (err) {
@@ -325,12 +334,14 @@ export function BabyForm({ baby, onDone }: { baby?: Baby; onDone: () => void }) 
       ) : null}
 
       <View style={s.actions}>
-        <Button
-          label={busy ? 'Kaydediliyor…' : editing ? 'Değişiklikleri kaydet' : 'Kaydet'}
-          onPress={submit}
-          disabled={busy}
-        />
-        <Button label="İptal" variant="ghost" onPress={onDone} disabled={busy} />
+        <ButtonRow>
+          <Button
+            label={busy ? 'Kaydediliyor…' : editing ? 'Değişiklikleri kaydet' : 'Kaydet'}
+            onPress={submit}
+            disabled={busy}
+          />
+          <Button label="İptal" variant="ghost" onPress={onDone} disabled={busy} />
+        </ButtonRow>
       </View>
     </View>
   );

@@ -103,3 +103,18 @@ Sen kıdemli bir Full-Stack Yazılım Mimarısın. Projemizde yer alan zamanlay�
 4. **Adım 4:** Emzirme, Uyku ve Sağma kronometrelerine canlı bildirim servisini bağla; kilit ekranında sayacın canlı aktığını, bildirim üzerinden duraklatılıp bitirilebildiğini test et.
 
 Sırasıyla bu adımları takip ederek geliştirmeye başla.
+
+---
+
+## Reklam davranışı (2026-11-21)
+
+Bildirim merkezi ve yerel alarmlar reklam **tetiklemez**. İki kesişme var:
+
+- **Kaydetme onay penceresi açıkken** reklam gösterilmez; gecikme dolduğunda
+  pencere hâlâ açıksa o gösterim atlanır (iki tam ekran katman üst üste
+  binmesin).
+- **Sessiz saat** panelde `respect_quiet_hours` ile reklamlara da
+  uygulanabiliyor (varsayılan kapalı). Uyku modülünün kendi reklamları
+  sessiz açılıyor; ilaç bildirimleri ise sessiz saatten **etkilenmiyor**.
+
+Ayrıntı: `TEKNIK_DOKUMAN.md` §23.3.

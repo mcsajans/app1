@@ -50,3 +50,30 @@ Sen kıdemli bir Full-Stack Yazılım Mimarısın. Projemizde Bebek & Çocuk Tak
 2. **Adım 2:** Tamamlanan backend API'lerinin detaylarını `teknik_dokuman.md` dosyasına kaydet.
 3. **Adım 3:** React Native projesinde ses kütüphanesini kurgula, `musicService` ve uyku zamanlayıcı (timer fade-out) logic'lerini yaz.
 4. **Adım 4:** Müzik listesi, medya çalar arayüzü ve zamanlayıcı UI bileşenlerini geliştirip test et.
+
+---
+
+## Reklam davranışı (2026-11-21)
+
+Bu modül reklam **tetiklemez** ve dahası, reklamı **engeller**:
+
+- Ninni / beyaz gürültü **çalarken** hiçbir tetikleyici reklam gösteremez
+  (`adService` kapısı). Tam ekran reklam sesi keser ve uyutulmaya çalışılan
+  bebeği uyandırır — modülün bütün amacını boşa çıkaran tek senaryo.
+- Çal/duraklat, döngü ve uyku zamanlayıcısı kayıt yazmadığı için `save`
+  tetiği de atılmaz.
+
+Ekranın altındaki sabit banner çalarken de durmaya devam eder: sessizdir ve
+ekranı kaplamaz.
+
+Ortak kurallar (ayrıntı: `TEKNIK_DOKUMAN.md` §23):
+
+- Tetikleyici panelden açılıp kapatılır (`/admin/ads`); ana anahtar kapalıyken
+  hiçbir istek atılmaz.
+- Reklam **kayıttan sonra** ve `await` edilmeden çağrılır; hiç `throw` etmez.
+  Kayıt hiçbir koşulda reklamdan etkilenmez.
+- Frekans sınırı (varsayılan 3 dk) ve oturum tavanı (5) her tetiği kapsar;
+  ninni çalarken, uygulama arka plandayken ve kaydetme onay penceresi
+  açıkken gösterim atlanır.
+- Ekranın altındaki **sabit banner** ayrı bir iş: tetikleyiciye bağlı değil,
+  her ekranda duruyor (§23.7).

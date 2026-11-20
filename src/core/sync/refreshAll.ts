@@ -1,5 +1,6 @@
 import { useAdSettingsStore } from '../ads/useAdSettingsStore';
 import { useBrandingStore } from '../branding/useBrandingStore';
+import { useConsentStore } from '../consents/useConsentStore';
 import { useInboxStore } from '../notifications/useInboxStore';
 import { useNotificationStore } from '../notifications/useNotificationStore';
 import { useModuleStore } from '../modules/useModuleStore';
@@ -35,6 +36,13 @@ async function run(scope: RefreshScope): Promise<void> {
   // Oturum gerektiren uçlar yalnızca giriş yapılmışken çağrılır.
   if (scope.includePrivate) {
     tasks.push(
+      /*
+       * Yasal onaylar. Ön plana her gelişte tazeleniyor çünkü panelde metnin
+       * sürümü artırılmış olabilir; o durumda onay penceresi yeniden açılmalı.
+       * Ağ yoksa görev hata verir, `checked` false kalır ve pencere AÇILMAZ —
+       * bayat bir cevapla kullanıcıyı kendi verisinden kilitlemek yanlış olurdu.
+       */
+      { name: 'consents', go: () => useConsentStore.getState().refreshMine() },
       { name: 'babies', go: () => useBabyStore.getState().sync() },
       { name: 'modules', go: () => useModuleStore.getState().refresh() },
       // Bildirimler bebekler tazelendikten SONRA planlanır: seçili bebek

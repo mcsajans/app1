@@ -398,3 +398,71 @@ Emülatörde sırayla doğrula:
 - **Reklam, kaydın başarısına bağlı.** Kayıt hata verirse reklam
   gösterilmez — kullanıcı hatayı okuyamadan ekranı kapatan bir reklam en kötü
   ihtimal.
+
+---
+
+## Panel ekranı (`/admin/ads`) — düzen
+
+Ekran üç katman hâlinde okunuyor:
+
+1. **Yapışkan başlık.** Durum özeti solda, **Kaydet** sağ üstte. Form uzun;
+   düğmenin ekrandan çıkmaması için başlık `position: sticky`. (`.wrap`
+   yatay kaydırma için `overflow-x: auto` taşıdığından yapışkanlık orada
+   çalışmıyordu — yalnızca bu sayfada `overflow: visible` ile geri alınıyor.)
+2. **Ortak ayarlar.** Her iki platformu birden etkileyen her şey üstte:
+   tüm aç/kapa kutuları **tek kartta, dört başlıklı kümede** (ana anahtar,
+   tetikleyiciler, hedef kitle ve izin, davranış + konsol işleri), ardından
+   frekans sınırı ve ortak metin alanları (gizlilik adresi, app-ads.txt,
+   test cihazları, not).
+3. **Platforma özel.** Android / iOS **sekmeleri**: App ID, geçiş birimi,
+   banner birimi, paket adı — iOS'ta ayrıca ATT metni. Aynı biçimdeki altı
+   kimlik alt alta dizildiğinde yanlış kutuya yapıştırmak çok kolaydı.
+   Sekme başlıkları o platformun durumunu (tamam/eksik/N hata) gösteriyor.
+   `app.json` parçası iki platformu birden içerdiği için sekmelerin dışında.
+
+Sekmeler **CSS ile** çalışıyor (gizli radyo + kardeş seçici), bilerek
+betiksiz: yüklenmeyen bir JS dosyası iOS sekmesini tamamen erişilemez
+bırakırdı. Doğrulama hatası gizli sekmedeyse o sekme kendiliğinden açılıyor
+(hata sayısı rozette), kaydettikten sonra da aynı sekmede kalınıyor
+(`?tab=ios`).
+
+## Uygulanan hâl — özet (2026-11-21)
+
+Şartnamenin kod karşılığı. Tetikleyicilerin tamamı `/admin/ads` ekranından
+tek tek açılıp kapatılıyor; hiçbiri koda gömülü değil.
+
+### Tetikleyiciler
+
+| Tetik | Nerede | Panel |
+|-------|--------|-------|
+| `save` | 14 ekranın "Kaydet" düğmesi (`withSaveFeedback`) | açık |
+| `complete` | Görev tamamlama, aşı "yapıldı" | açık |
+| `invite` | Aile daveti oluşturma | açık |
+| `timer_start` | Emzirme başlatma (2 sn), uyku başlatma (3 sn), sağmaya başla (3 sn) | açık |
+| `baby_switch` | Bebek değişimi, yeni bebek, paylaşım koduyla katılma (`migrations/025`) | açık |
+
+### Modüle özgü sapmalar
+
+| Modül | Sapma | Gerekçe |
+|-------|-------|---------|
+| Uyku | 3 sn gecikme + **ses kapalı** | Bebeği uyutmaya çalışırken açılan sesli reklam modülün amacını bozar |
+| Sağma | 3 sn gecikme | Pompayı kurup telefonu bırakan kullanıcıya 2 sn kısa |
+| Emzirme | Taraf değiştirmede **reklam yok** | Seansın ortası; ölçülen süreyi gölgeler |
+| Bebek profilleri | Aktif bebeğe dokunmak ve "Düzenle" **reklam açmaz** | Değişim değil |
+| Ninni & Müzik | Çalarken **hiçbir** reklam gösterilmez | Ses keser, bebeği uyandırır |
+
+Mekanizma: `showAdAfterAction(trigger, { delayMs?, muted? })` ve
+`withSaveFeedback(fn, mesaj?, trigger?, adOptions?)`. `adTrigger: null`
+geçilirse o kayıt hiç reklam açmaz.
+
+### Sabit alt banner (`migrations/024`)
+
+Ekranın en altında sürekli duran banner; gezinme çubuğu onun üstüne çıkıyor
+ve ekranların kullanılabilir yüksekliği gerçekten daralıyor (reklamın
+içeriğin üzerine binmesi "accidental click" ihlali olurdu). "×" ile
+kapatılabiliyor, her ekran değişiminde geri açılıyor. Panelde kendi anahtarı
+(`banner_enabled`) ve kendi birim kimlikleri var — banner ve geçiş reklamı
+AdMob'da ayrı birimler.
+
+Ayrıntıların tamamı: `TEKNIK_DOKUMAN.md` §23; her modülün kendi dosyasında
+"Reklam davranışı" başlığı var.

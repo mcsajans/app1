@@ -79,15 +79,26 @@ export function BottomNav({
   active,
   onNavigate,
   onQuickAdd,
+  bottomOffset = 0,
 }: {
   active: NavKey | null;
   onNavigate: (key: NavKey) => void;
   onQuickAdd: () => void;
+  /**
+   * Çubuğun ekranın dibinden ne kadar yukarıda duracağı.
+   *
+   * Alt banner reklamı açıkken (bkz. `AdBannerBar`) çubuk onun ÜSTÜNE çıkar:
+   * reklam uygulamanın üzerine binmemeli, kullanım alanını daraltmalı.
+   * Değer sıfırdan büyükken cihazın alt güvenli alanını artık reklam çubuğu
+   * karşılıyor, bu yüzden buradaki dolgu kaldırılır — yoksa boşluk iki kez
+   * bırakılırdı.
+   */
+  bottomOffset?: number;
 }) {
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={[s.bar, { paddingBottom: insets.bottom }]}>
+    <View style={[s.bar, { bottom: bottomOffset, paddingBottom: bottomOffset > 0 ? 0 : insets.bottom }]}>
       <View style={s.row}>
         <NavItem nav="home" label="Ana sayfa" active={active} onNavigate={onNavigate}>
           <TabIcon name="home" active={active === 'home'} />
@@ -124,7 +135,6 @@ const s = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 0,
     backgroundColor: colors.surface,
     borderTopLeftRadius: radius.xl,
     borderTopRightRadius: radius.xl,

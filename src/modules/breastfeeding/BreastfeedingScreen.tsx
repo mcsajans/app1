@@ -6,6 +6,8 @@ import { RecordDetailSheet, fullMoment, type RecordDetail } from '../../componen
 import { Button, Card, EmptyState, FormError, Loading, Screen, SectionTitle } from '../../components/ui';
 import { ReadOnlyBanner, useCanEdit } from '../../components/permission';
 import { ActiveDurationSheet, type SessionSummary } from './ActiveDurationSheet';
+import { ManualSessionSheet, type ManualBreastValues } from './ManualSessionSheet';
+import { StartPanel, type StartRequest } from './StartPanel';
 import { errorText } from '../../core/api/client';
 import {
   breastfeedingService,
@@ -17,7 +19,7 @@ import { useBabyStore } from '../../core/stores/useBabyStore';
 import { SIDE_LABEL, breastTimerOf } from '../../core/timers/liveTimer';
 import { usePendingStop } from '../../core/timers/usePendingStop';
 import { useLiveTimerStore } from '../../core/timers/useLiveTimerStore';
-import { colors, radius, spacing, typography } from '../../core/theme';
+import { colors, spacing, typography } from '../../core/theme';
 import { showAdAfterAction } from '../../core/ads/adService';
 import { withSaveFeedback } from '../../core/feedback/withSaveFeedback';
 
@@ -47,6 +49,18 @@ export default function BreastfeedingScreen() {
    */
   const [summary, setSummary] = useState<SessionSummary | null>(null);
   const [adjustId, setAdjustId] = useState<number | null>(null);
+  /** Elle kayıt sayfası açık mı. */
+  const [sheet, setSheet] = useState(false);
+  /*
+   * Sayfayı her açılışta yeniden bağlamak için artan sayaç. Sayfa saat
+   * varsayılanlarını `useState` başlatıcısında hesaplıyor; `key` değişmezse
+   * dün akşam açılıp kapatılan sayfa bugün eski saatlerle açılırdı.
+   */
+  const [sheetSeq, setSheetSeq] = useState(0);
+  /** Başlangıç panelini sıfırlamak için artan sayaç (aynı `key` deseni). */
+  const [panelSeq, setPanelSeq] = useState(0);
+  /** Alt sayfa "İkisi de" seçiliyken mi açıldı. */
+  const [sheetBoth, setSheetBoth] = useState(false);
 
   const active = useAsyncData(
     () => (babyId ? breastfeedingService.active(babyId) : Promise.resolve({ session: null })),
@@ -66,6 +80,16 @@ export default function BreastfeedingScreen() {
   const running = session !== null && session.status !== 'completed';
   const paused = session?.status === 'paused';
   const currentSide = session?.open_side ?? null;
+  /*
+   * Duraklatılmış seansta açık segment yoktur (`open_side` null) ama ekranda
+   * hâlâ bir taraf gösterilmeli: "Emzirme — duraklatıldı" hangi memede
+   * kalındığını söylemiyordu ve taraf değiştirme düğmesi de kayboluyordu.
+   * Sunucu duraklatılmış seansta `switch` kabul ediyor (seansı sürdürür).
+   */
+  const shownSide = currentSide ?? session?.last_side ?? null;
+  /** Emzirilen tarafın tersi — taraf değiştirme düğmesi yalnızca onu gösterir. */
+  const other: 'left' | 'right' | null =
+    shownSide === 'left' ? 'right' : shownSide === 'right' ? 'left' : null;
 
   // Çalışan segmentin başlangıcı; duraklatıldıysa sayaç ilerlemez.
   const segmentStart = running && !paused ? (session?.open_segment_started_at ?? null) : null;
@@ -96,42 +120,107 @@ export default function BreastfeedingScreen() {
     history.reload();
   };
 
-  const run = async (fn: () => Promise<unknown>) => {
+  /**
+   * Ortak istek sarmalayıcısı. Başarıyı **döndürür**: elle giriş sayfası
+   * yalnızca istek geçtiyse kapanmalı, yoksa kullanıcı doldurduğu formu
+   * kaybeder ve hatayı arkadaki ekranda arar.
+   */
+  const run = async (fn: () => Promise<unknown>): Promise<boolean> => {
     setBusy(true);
     setError(null);
     try {
       await fn();
       refreshAll();
+      return true;
     } catch (err) {
       setError(errorText(err));
+      return false;
     } finally {
       setBusy(false);
     }
   };
 
   /**
-   * Sol / Sağ — sayaç başlatma ve meme değiştirme. Reklam tetiği panelde
-   * varsayılan KAPALI (`trigger_timer_start`): tek bir emzirmede bu düğmeler
-   * 3-4 kez basılıyor ve sayaç akarken ekranı kapatan reklam, ölçülen sürenin
-   * doğruluğuna da gölge düşürüyor (Reklam.md §0.3-C). Açılırsa tek emniyet
-   * panelin frekans sınırı olur.
+   * Sayacı başlatır ve **tam ekran reklam tetikler** (`timer_start`).
+   *
+   * Reklam kaydın ardından ve `await` edilmeden çağrılıyor: `showAdAfterAction`
+   * hiç `throw` etmez ve sayaç her hâlükârda başlamış olur. Gecikme panelden
+   * gelir (`action_delay_ms`, istenen davranış için **2000 ms**); tetiğin
+   * kendisi de panelden açılıp kapanıyor (`trigger_timer_start`).
+   *
+   * Tetik yalnızca BAŞLATMADA atılıyor — taraf değiştirmede değil (bkz.
+   * `onSwitch`). Üst üste gelen gösterimleri panelin frekans sınırı ve
+   * oturum tavanı eliyor.
    */
-  const onStart = (side: 'left' | 'right') => {
+  const onStart = (req: StartRequest) => {
     if (!babyId) return;
     void run(async () => {
-      const res = await breastfeedingService.start(babyId, side);
+      const res = await breastfeedingService.start(babyId, req.side, req.at ?? undefined, req.note);
       showAdAfterAction('timer_start');
       return res;
     });
   };
 
+  /*
+   * Ayrıntılı alt sayfa. `both`, panelin "İki memeyi de emzirdim" düğmesinden
+   * gelir: sayfa o seçimle açılmazsa kullanıcı az önce söylediği şeyi bir kez
+   * daha seçmek zorunda kalıyordu.
+   */
+  const openSheet = (both: boolean) => {
+    setError(null);
+    setSheetBoth(both);
+    setSheetSeq((n) => n + 1);
+    setSheet(true);
+  };
+
+  /**
+   * Elle kayıt (§10.6) — seans doğrudan tamamlanmış yazılır.
+   *
+   * İki yerden çağrılır: başlangıç panelinin "Geri tarihli" sekmesi (tek
+   * taraf, sık kullanılan hâl) ve iki memeli ayrıntılı alt sayfa. Gövdesi
+   * aynı olduğu için tek yerde durur; çağıranlar yalnızca başarıdan sonra
+   * ne kapatacaklarına karar verir.
+   */
+  const submitManual = (v: ManualBreastValues): Promise<boolean> => {
+    if (!babyId) return Promise.resolve(false);
+    return run(() => withSaveFeedback(() =>
+      breastfeedingService.createManual(babyId, {
+        started_at: v.startedAt,
+        ended_at: v.endedAt,
+        first_side: v.firstSide,
+        ...(v.leftSec === undefined ? {} : { left_sec: v.leftSec }),
+        ...(v.rightSec === undefined ? {} : { right_sec: v.rightSec }),
+        note: v.note,
+      })));
+  };
+
+  const onManualSubmit = (v: ManualBreastValues) => {
+    void submitManual(v).then((saved) => {
+      if (saved) setSheet(false);
+    });
+  };
+
+  /*
+   * Panelden gelen kayıt: başarıdan sonra panel `key` ile yeniden bağlanır,
+   * yani taraf seçimine döner ve form boşalır. Kayıt zaten geçmişe düştü;
+   * dolu formu ekranda bırakmak "kaydedildi mi?" sorusunu doğuruyordu.
+   */
+  const onPanelManualSave = (v: ManualBreastValues) => {
+    void submitManual(v).then((saved) => {
+      if (saved) setPanelSeq((n) => n + 1);
+    });
+  };
+
+  /**
+   * Taraf değiştirme — **reklam tetiklemez**.
+   *
+   * `timer_start` tetiği yalnızca sayacın BAŞLADIĞI anda atılıyor. Tarafı
+   * değiştirmek emzirmenin ortasında bir an: tam ekran reklam hem ölçülen
+   * süreyi gölgeler hem de bebeği kucağında tutan anneyi uygulamadan atar.
+   */
   const onSwitch = (side: 'left' | 'right') => {
     if (!babyId || sid === null) return;
-    void run(async () => {
-      const res = await breastfeedingService.switchSide(babyId, sid, side);
-      showAdAfterAction('timer_start');
-      return res;
-    });
+    void run(() => breastfeedingService.switchSide(babyId, sid, side));
   };
 
   /**
@@ -280,7 +369,6 @@ export default function BreastfeedingScreen() {
   }
 
   const nextSide = last.data?.next_side ?? null;
-  const lastSession = last.data?.last ?? null;
   const sessions = history.data?.sessions ?? [];
 
   return (
@@ -288,103 +376,95 @@ export default function BreastfeedingScreen() {
       <ReadOnlyBanner />
       {error ? <FormError message={error} /> : null}
 
-      {/* ── Son emzirilen taraf rozeti ── */}
-      {lastSession ? (
-        <Card>
-          <View style={s.badgeRow}>
-            <View style={s.badge}>
-              <Text style={s.badgeText}>
-                Son: {lastSession.last_side ? SIDE_LABEL[lastSession.last_side] : '—'}
-              </Text>
-            </View>
-            {nextSide ? (
-              <View style={[s.badge, s.badgeNext]}>
-                <Text style={[s.badgeText, s.badgeNextText]}>Sırada: {SIDE_LABEL[nextSide]}</Text>
-              </View>
-            ) : null}
-          </View>
-          <Text style={s.hint}>
-            {clockOf(lastSession.start_time)} · {formatDuration(lastSession.total_duration_seconds)}
-            {typeof lastSession.minutes_ago === 'number' ? ` · ${lastSession.minutes_ago} dk önce` : ''}
-          </Text>
-        </Card>
-      ) : null}
-
-      {/* ── Kronometre ── */}
+      {/*
+        ── Kronometre ──
+        Üstte bir zamanlar "Son: Sol / Sırada: Sağ" rozet kartı vardı. Kaldırıldı:
+        sıradaki taraf zaten başlangıç panelindeki kutunun rozetinde yazıyor,
+        son emzirmenin saati ve süresi ise hemen aşağıdaki geçmiş listesinin ilk
+        satırı. Aynı bilgiyi üç yerde göstermek ekranı uzatmaktan başka bir şey
+        yapmıyordu.
+      */}
       <Card>
         {active.loading && !session ? (
           <Loading label="Durum alınıyor…" />
         ) : running ? (
           <>
             <Text style={s.runningLabel}>
-              {currentSide ? `${SIDE_LABEL[currentSide]} meme` : 'Emzirme'} {paused ? '— duraklatıldı' : 'sürüyor'}
+              {shownSide ? `${SIDE_LABEL[shownSide]} meme` : 'Emzirme'} {paused ? '— duraklatıldı' : 'sürüyor'}
             </Text>
             <TimerDisplay seconds={elapsed} />
 
+            {/*
+              Taraf değiştirme tek düğme: açık olan tarafa "geç" demek anlamsız
+              ve devre dışı bir ikizi yan yana koymak ekranda yer kaplıyordu.
+              Emzirilen taraf zaten üstteki başlıkta yazıyor.
+            */}
+            {other ? (
+              <View style={s.switchRow}>
+                <Button
+                  label={`${SIDE_LABEL[other]}a geç`}
+                  onPress={() => onSwitch(other)}
+                  disabled={busy || !canEdit}
+                />
+              </View>
+            ) : null}
+
+            {/*
+              Seans eylemleri tek satırda: alt alta üç düğme kartı gereksiz
+              uzatıyor, taraf değiştirme satırıyla aynı ızgarada durunca
+              "bu seansla ne yapabilirim" tek bakışta okunuyor. Dar sütuna
+              sığmaları için `compact`.
+              Sayaç akarken de geçmiş bir seans girilebilir (çakışmadığı sürece).
+            */}
             <View style={s.sideRow}>
               <View style={s.sideCol}>
                 <Button
-                  label="Sola geç"
-                  variant={currentSide === 'left' ? 'ghost' : 'primary'}
-                  onPress={() => onSwitch('left')}
-                  disabled={busy || !canEdit || currentSide === 'left'}
+                  label={paused ? 'Devam et' : 'Duraklat'}
+                  variant="ghost"
+                  compact
+                  onPress={() => {
+                    if (!babyId || sid === null) return;
+                    void run(() =>
+                      paused
+                        ? breastfeedingService.resume(babyId, sid)
+                        : breastfeedingService.pause(babyId, sid),
+                    );
+                  }}
+                  disabled={busy || !canEdit}
                 />
               </View>
               <View style={s.sideCol}>
                 <Button
-                  label="Sağa geç"
-                  variant={currentSide === 'right' ? 'ghost' : 'primary'}
-                  onPress={() => onSwitch('right')}
-                  disabled={busy || !canEdit || currentSide === 'right'}
+                  label={busy ? 'Bitiriliyor…' : 'Bitir'}
+                  variant="danger"
+                  compact
+                  // Kayıt hemen yazılmaz: önce özet ve aktif süre düzeltme
+                  // penceresi açılır (Modül 2 ek geliştirme).
+                  onPress={openSummary}
+                  disabled={busy || !canEdit}
+                />
+              </View>
+              <View style={s.sideCol}>
+                <Button
+                  label="Elle kayıt"
+                  variant="ghost"
+                  compact
+                  onPress={() => openSheet(false)}
+                  disabled={busy || !canEdit}
                 />
               </View>
             </View>
-
-            <Button
-              label={paused ? 'Devam et' : 'Duraklat'}
-              variant="ghost"
-              onPress={() => {
-                if (!babyId || sid === null) return;
-                void run(() =>
-                  paused
-                    ? breastfeedingService.resume(babyId, sid)
-                    : breastfeedingService.pause(babyId, sid),
-                );
-              }}
-              disabled={busy || !canEdit}
-            />
-            <Button
-              label={busy ? 'Bitiriliyor…' : 'Emzirmeyi bitir'}
-              variant="danger"
-              // Kayıt hemen yazılmaz: önce özet ve aktif süre düzeltme
-              // penceresi açılır (Modül 2 ek geliştirme).
-              onPress={openSummary}
-              disabled={busy || !canEdit}
-            />
           </>
         ) : (
-          <>
-            <Text style={s.label}>Hangi memeden başlanıyor?</Text>
-            <View style={s.sideRow}>
-              <View style={s.sideCol}>
-                <Button
-                  label={nextSide === 'left' ? 'Sol (sıra)' : 'Sol'}
-                  onPress={() => onStart('left')}
-                  disabled={busy || !canEdit}
-                  variant={nextSide === 'left' ? 'primary' : 'ghost'}
-                />
-              </View>
-              <View style={s.sideCol}>
-                <Button
-                  label={nextSide === 'right' ? 'Sağ (sıra)' : 'Sağ'}
-                  onPress={() => onStart('right')}
-                  disabled={busy || !canEdit}
-                  variant={nextSide === 'right' ? 'primary' : 'ghost'}
-                />
-              </View>
-            </View>
-            {nextSide ? <Text style={s.hint}>Öneri: son emzirilen tarafın tersi.</Text> : null}
-          </>
+          <StartPanel
+            key={panelSeq}
+            nextSide={nextSide}
+            busy={busy}
+            disabled={!canEdit}
+            onStart={onStart}
+            onManual={() => openSheet(true)}
+            onManualSave={onPanelManualSave}
+          />
         )}
       </Card>
 
@@ -400,14 +480,18 @@ export default function BreastfeedingScreen() {
             <RecordRow
               key={x.id}
               icon="breastfeeding"
-              // Bebeğin gerçek beslenme süresi öne çıkar; kronometrenin ölçtüğü
-              // duvar saati ancak farklıysa parantez içinde gösterilir.
-              title={`${clockOf(x.start_time)} · ${formatDuration(x.active_duration_sec)} aktif${
-                x.total_elapsed_sec > x.active_duration_sec
-                  ? ` (toplam ${formatDuration(x.total_elapsed_sec)})`
-                  : ''
-              }`}
-              detail={`Sol ${formatDuration(x.left_duration_seconds)} · Sağ ${formatDuration(x.right_duration_seconds)}${
+              /*
+                Üst satır seansın SAAT ARALIĞI: "ne zaman emzirdim" sorusunun
+                cevabı tek bakışta okunuyor, süre hesabı alt satıra kalıyor.
+                Bitmemiş seansta bitiş saati yok; "beri" ile yazılır.
+              */
+              title={
+                x.end_time
+                  ? `${clockOf(x.start_time)} – ${clockOf(x.end_time)}`
+                  : `${clockOf(x.start_time)}'ten beri`
+              }
+              // Alt satır hangi meme, ne kadar: dakika:saniye + "dk".
+              detail={`Sol ${formatDuration(x.left_duration_seconds)} dk · Sağ ${formatDuration(x.right_duration_seconds)} dk${
                 x.last_side ? ` · son ${SIDE_LABEL[x.last_side]}` : ''
               }${x.is_duration_adjusted ? ' · süre düzeltildi' : ''}`}
               right={x.status === 'completed' ? undefined : 'sürüyor'}
@@ -418,6 +502,17 @@ export default function BreastfeedingScreen() {
       </Card>
 
       <RecordDetailSheet detail={detail} onClose={() => setDetail(null)} />
+
+      <ManualSessionSheet
+        key={sheetSeq}
+        visible={sheet}
+        initialBoth={sheetBoth}
+        busy={busy}
+        error={sheet ? error : null}
+        nextSide={nextSide}
+        onClose={() => setSheet(false)}
+        onSubmit={onManualSubmit}
+      />
 
       <ActiveDurationSheet
         summary={summary}
@@ -438,14 +533,5 @@ const s = StyleSheet.create({
   runningLabel: { ...typography.small, color: colors.primary, fontWeight: '700', textAlign: 'center' },
   sideRow: { flexDirection: 'row', gap: spacing.sm, marginVertical: spacing.sm },
   sideCol: { flex: 1 },
-  badgeRow: { flexDirection: 'row', gap: spacing.sm, justifyContent: 'center' },
-  badge: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.pill,
-    backgroundColor: colors.bg,
-  },
-  badgeNext: { backgroundColor: colors.primarySoft },
-  badgeText: { ...typography.small, color: colors.textSoft, fontWeight: '700' },
-  badgeNextText: { color: colors.primary },
+  switchRow: { marginVertical: spacing.sm },
 });

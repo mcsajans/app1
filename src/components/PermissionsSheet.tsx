@@ -8,7 +8,7 @@ import {
 } from '../core/permissions/usePermissionStore';
 import { Icon } from './Icon';
 import { colors, radius, shadow, spacing, typography } from '../core/theme';
-import { Button } from './ui';
+import { Button, ButtonRow } from './ui';
 
 /**
  * Kurulumdan sonra bir kez gösterilen izin sayfası.
@@ -120,16 +120,18 @@ export function PermissionsSheet({
           </ScrollView>
 
           <View style={s.actions}>
-            {allAnswered || done ? (
-              <Button label="Devam et" onPress={onClose} />
-            ) : (
-              <Button
-                label={asking ? 'İzinler isteniyor…' : 'İzinleri ver'}
-                onPress={onAskAll}
-                disabled={asking}
-              />
-            )}
-            <Button label="Şimdi değil" variant="ghost" onPress={onClose} disabled={asking} />
+            <ButtonRow>
+              {allAnswered || done ? (
+                <Button label="Devam et" onPress={onClose} />
+              ) : (
+                <Button
+                  label={asking ? 'İzinler isteniyor…' : 'İzinleri ver'}
+                  onPress={onAskAll}
+                  disabled={asking}
+                />
+              )}
+              <Button label="Şimdi değil" variant="ghost" onPress={onClose} disabled={asking} />
+            </ButtonRow>
           </View>
         </View>
       </View>

@@ -1,48 +1,35 @@
 import React, { useState } from 'react';
-import { Alert, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Alert, StyleSheet, Text, View } from 'react-native';
 
-import { Chips, RecordRow, amountText, clockOf } from '../../components/records';
+import { RecordRow, amountText, clockOf } from '../../components/records';
 import { RecordDetailSheet, fullMoment, type RecordDetail } from '../../components/RecordDetail';
 import { Button, Card, EmptyState, FormError, Loading, Screen, SectionTitle } from '../../components/ui';
 import { ReadOnlyBanner, useCanEdit } from '../../components/permission';
 import { errorText } from '../../core/api/client';
-import {
-  FOOD_CATEGORIES, PORTION_UNITS, REACTIONS,
-  iso, solidService, type SolidRecord,
-} from '../../core/api/modules';
+import { iso, solidService, type SolidRecord } from '../../core/api/modules';
 import { useAsyncData } from '../../core/hooks/useAsyncData';
 import { useBabyStore } from '../../core/stores/useBabyStore';
 import { colors, radius, spacing, typography } from '../../core/theme';
 import { withSaveFeedback } from '../../core/feedback/withSaveFeedback';
+import { SolidFormSheet, type SolidFormValues } from './SolidFormSheet';
+import { CATEGORY_LABELS, REACTION_LABELS, UNIT_LABELS } from './labels';
 
-const CATEGORY_LABELS: Record<string, string> = {
-  vegetable: 'Sebze', fruit: 'Meyve', cereal: 'Tahıl',
-  protein: 'Protein', dairy: 'Süt ürünü', snack: 'Atıştırmalık', other: 'Diğer',
-};
-const REACTION_LABELS: Record<string, string> = {
-  loved: 'Sevdi', neutral: 'Nötr', disliked: 'Sevmedi', allergic: 'Alerji',
-};
-const UNIT_LABELS: Record<string, string> = {
-  spoon: 'kaşık', gram: 'gram', bowl: 'kâse', piece: 'adet',
-};
-
-/** Sık kullanılan gıdalar — hızlı seçim etiketleri. */
-const QUICK_FOODS = ['Havuç', 'Elma', 'Muz', 'Yoğurt', 'Pirinç', 'Brokoli', 'Yumurta', 'Avokado'];
-
-/** Modül 4 — Ek Gıda. */
+/**
+ * Modül 4 — Ek Gıda.
+ *
+ * Ekran **kayıtları** gösteriyor; ekleme formu "+ Ek gıda ekle" ile alt
+ * sayfada açılıyor. Önceden yedi alanlık form ekranın ortasında sabitti ve
+ * asıl soru — "bugün ne yedi, neye tepki verdi" — formun altında kalıyordu.
+ */
 export default function SolidScreen() {
   const baby = useBabyStore((s) => s.selected());
   const babyId = baby?.id ?? null;
 
   const canEdit = useCanEdit();
 
-  const [food, setFood] = useState('');
-  const [category, setCategory] = useState<(typeof FOOD_CATEGORIES)[number] | null>(null);
-  const [reaction, setReaction] = useState<(typeof REACTIONS)[number]>('neutral');
-  const [unit, setUnit] = useState<(typeof PORTION_UNITS)[number]>('spoon');
-  const [amount, setAmount] = useState('');
-  const [threeDay, setThreeDay] = useState(false);
-  const [note, setNote] = useState('');
+  /** Ekleme sayfası açık mı + her açılışta yeniden bağlama sayacı. */
+  const [formOpen, setFormOpen] = useState(false);
+  const [formSeq, setFormSeq] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<RecordDetail | null>(null);
@@ -64,38 +51,45 @@ export default function SolidScreen() {
     allergies.reload();
   };
 
-  const save = async () => {
-    if (!babyId) return;
-    if (!food.trim()) return setError('Yiyecek adı zorunlu.');
-
-    const parsed = amount.trim() === '' ? null : Number(amount.replace(',', '.'));
-    if (parsed !== null && !Number.isFinite(parsed)) return setError('Miktar sayı olmalı.');
-
-    setBusy(true);
+  const openForm = () => {
     setError(null);
-    try {
-      await withSaveFeedback(() => solidService.create(babyId, {
-        started_at: iso(),
-        food_name: food.trim(),
-        food_category: category,
-        reaction,
-        is_three_day_rule: threeDay,
-        // Birim yalnızca miktar varsa gönderilir; sunucu miktar olmadan birim
-        // istemiyor ve ek gıdada hacim birimi reddediliyor (§22.2).
-        amount: parsed,
-        amount_unit: parsed === null ? null : unit,
-        note: note.trim() || null,
-      }));
-      setFood('');
-      setAmount('');
-      setNote('');
-      setThreeDay(false);
-      refreshAll();
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setBusy(false);
-    }
+    setFormSeq((n) => n + 1);
+    setFormOpen(true);
+  };
+
+  /**
+   * Alt sayfadan gelen kayıt.
+   *
+   * Reklam `withSaveFeedback`in varsayılan `save` tetiğinden geliyor
+   * (panelden açılıp kapanıyor, gecikmesi de orada). Sayfa yalnızca kayıt
+   * **geçtiyse** kapanıyor: hata durumunda doldurulan form kaybolmamalı.
+   */
+  const save = (v: SolidFormValues) => {
+    if (!babyId) return;
+    void (async () => {
+      setBusy(true);
+      setError(null);
+      try {
+        await withSaveFeedback(() => solidService.create(babyId, {
+          started_at: iso(),
+          food_name: v.food,
+          food_category: v.category,
+          reaction: v.reaction,
+          is_three_day_rule: v.threeDay,
+          // Birim yalnızca miktar varsa gönderilir; sunucu miktar olmadan
+          // birim istemiyor ve ek gıdada hacim birimi reddediliyor (§22.2).
+          amount: v.amount,
+          amount_unit: v.amount === null ? null : v.unit,
+          note: v.note,
+        }));
+        setFormOpen(false);
+        refreshAll();
+      } catch (err) {
+        setError(errorText(err));
+      } finally {
+        setBusy(false);
+      }
+    })();
   };
 
   const onDelete = (r: SolidRecord) => {
@@ -186,76 +180,15 @@ export default function SolidScreen() {
         </View>
       ) : null}
 
-      {/* ── Ekleme formu ── */}
-      <SectionTitle hint="3 gün kuralı: yeni gıdayı üç gün tekrarlayıp tepki gözlemlemek.">
-        Ek gıda ekle
-      </SectionTitle>
-      <Card>
-        <Text style={s.label}>Yiyecek *</Text>
-        <TextInput
-          style={s.input}
-          value={food}
-          onChangeText={setFood}
-          placeholder="Havuç püresi"
-          placeholderTextColor={colors.textFaint}
-          editable={!busy}
-        />
-        <View style={s.quick}>
-          {QUICK_FOODS.map((q) => (
-            <Text key={q} style={s.quickChip} onPress={() => !busy && setFood(q)}>
-              {q}
-            </Text>
-          ))}
-        </View>
-
-        <Text style={s.label}>Kategori</Text>
-        <Chips options={FOOD_CATEGORIES} value={category} onChange={setCategory} labels={CATEGORY_LABELS} disabled={busy || !canEdit} allowClear />
-
-        <Text style={s.label}>Tepki *</Text>
-        <Chips options={REACTIONS} value={reaction} onChange={(v) => v && setReaction(v)} labels={REACTION_LABELS} disabled={busy || !canEdit} />
-
-        <Text style={s.label}>Miktar</Text>
-        <TextInput
-          style={s.input}
-          value={amount}
-          onChangeText={setAmount}
-          placeholder="2"
-          placeholderTextColor={colors.textFaint}
-          keyboardType="decimal-pad"
-          editable={!busy}
-        />
-        <View style={s.gapXs} />
-        <Chips options={PORTION_UNITS} value={unit} onChange={(v) => v && setUnit(v)} labels={UNIT_LABELS} disabled={busy || !canEdit} />
-
-        <View style={s.switchRow}>
-          <View style={s.switchText}>
-            <Text style={s.label}>3 gün kuralı denemesi</Text>
-          </View>
-          <Switch
-            value={threeDay}
-            onValueChange={setThreeDay}
-            disabled={busy || !canEdit}
-            trackColor={{ true: colors.primary, false: colors.border }}
-            thumbColor={colors.surface}
-          />
-        </View>
-
-        <Text style={s.label}>Not</Text>
-        <TextInput
-          style={s.input}
-          value={note}
-          onChangeText={setNote}
-          placeholder="Gaz yaptı, döküntü oluştu…"
-          placeholderTextColor={colors.textFaint}
-          editable={!busy}
-        />
-
-        <View style={s.gap} />
-        <Button label={busy ? 'Kaydediliyor…' : 'Kaydet'} onPress={save} disabled={busy || !canEdit} />
-      </Card>
+      {/*
+        Ekleme formu alt sayfada: ekranın işi kayıtları göstermek.
+        Düğme listenin ÜSTÜNDE duruyor — en sık yapılan iş o ve geçmiş
+        uzadıkça aşağı kaymasın.
+      */}
+      <Button label="+ Ek gıda ekle" onPress={openForm} disabled={busy || !canEdit} />
 
       {/* ── Geçmiş ── */}
-      <SectionTitle hint="Uzun basıp silebilirsin.">Geçmiş</SectionTitle>
+      <SectionTitle hint="Dokununca ayrıntı, uzun basınca silme.">Son kayıtlar</SectionTitle>
       <Card>
         {list.loading && records.length === 0 ? (
           <Loading label="Kayıtlar yükleniyor…" />
@@ -284,42 +217,29 @@ export default function SolidScreen() {
       </Card>
 
       <RecordDetailSheet detail={detail} onClose={() => setDetail(null)} />
+
+      <SolidFormSheet
+        key={formSeq}
+        visible={formOpen}
+        busy={busy}
+        error={formOpen ? error : null}
+        onClose={() => setFormOpen(false)}
+        onSubmit={save}
+      />
     </Screen>
   );
 }
 
 const s = StyleSheet.create({
-  label: { ...typography.small, color: colors.textSoft, fontWeight: '600', marginTop: spacing.sm },
   hint: { ...typography.small, color: colors.textSoft },
-  gap: { height: spacing.sm },
-  gapXs: { height: spacing.xs },
-  input: {
-    height: 50,
+  /* Alerji kartı: listenin üstünde, kırmızı çerçeveli uyarı. */
+  alertCard: {
+    gap: 2,
+    padding: spacing.md,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceSoft,
-    paddingHorizontal: spacing.md,
-    ...typography.body,
-    color: colors.text,
-  },
-  quick: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.xs },
-  quickChip: {
-    ...typography.tiny,
-    color: colors.primary,
-    backgroundColor: colors.primarySoft,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: radius.pill,
-    overflow: 'hidden',
-  },
-  switchRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.sm },
-  switchText: { flex: 1 },
-  alertCard: {
-    backgroundColor: '#FDECEC',
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    gap: 2,
+    borderColor: colors.danger,
+    backgroundColor: colors.surface,
   },
   alertTitle: { ...typography.small, color: colors.danger, fontWeight: '700' },
   alertRow: { ...typography.small, color: colors.danger },

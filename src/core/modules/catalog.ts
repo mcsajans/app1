@@ -134,6 +134,19 @@ export const MODULE_CATALOG: ModuleMeta[] = [
     color: moduleTint.growth,
     isCore: false, defaultOn: true, sortOrder: 15,
   },
+  /*
+   * İlaç Takibi — `defaultOn: false`. Her bebek ilaç kullanmıyor; ızgarayı
+   * herkese kalabalıklaştırmanın anlamı yok (ek gıda ve sağma da böyle).
+   * Sunucudaki katalog satırı da aynı varsayılanla geliyor (migrations/023).
+   */
+  {
+    key: 'medication',
+    title: 'İlaç Takibi',
+    shortTitle: 'İlaç',
+    description: 'Kür ve doz takibi, sonraki doz hatırlatması',
+    color: moduleTint.medication,
+    isCore: false, defaultOn: false, sortOrder: 16,
+  },
 ];
 
 export const MODULE_BY_KEY: Record<ModuleKey, ModuleMeta> = MODULE_CATALOG.reduce(

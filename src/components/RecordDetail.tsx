@@ -8,12 +8,24 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RELATIONSHIP_LABELS, type AuditFields } from '../core/api/modules';
 import { Icon, type IconName } from './Icon';
 import { colors, radius, spacing, typography } from '../core/theme';
-import { Button } from './ui';
+import { Button, ButtonRow } from './ui';
 import { StatTile } from './records';
 
 const DURATION = 200;
 
 export type DetailStat = { label: string; value: string; hint?: string; tone?: 'neutral' | 'warn' | 'good' };
+
+/**
+ * Kaydın nasıl girildiği. `notification` ve `task` ilaç modülünden (Modül 16)
+ * geliyor: doz, bildirimdeki "Verildi" düğmesinden ya da tamamlanan bir
+ * görevden de yazılabiliyor ve bu ayrım denetim izinde görünmeli.
+ */
+const ENTRY_SOURCE_LABEL: Record<NonNullable<AuditFields['entry_source']>, string> = {
+  timer: 'Kronometreyle',
+  manual: 'Elle girildi',
+  notification: 'Bildirimden',
+  task: 'Görevden',
+};
 
 /** Değeri boş olan satırlar çizilmez — "detaylı" demek "boş alan dolu" demek değil. */
 export type DetailRow = { label: string; value: string | number | null | undefined };
@@ -205,7 +217,7 @@ export function RecordDetailSheet({
             {shown.audit?.entry_source ? (
               <Row
                 label="Giriş şekli"
-                value={shown.audit.entry_source === 'timer' ? 'Kronometreyle' : 'Elle girildi'}
+                value={ENTRY_SOURCE_LABEL[shown.audit.entry_source]}
               />
             ) : null}
             {shown.audit?.created_at ? (
@@ -226,14 +238,21 @@ export function RecordDetailSheet({
           </>
           ) : null}
 
+          {/*
+            Eylemler tek satırda: modüle özgü eylem(ler), silme ve kapatma.
+            En fazla dört düğme oluyor ve `ButtonRow` hepsine `compact`
+            verdiği için etiketler iki satıra sığıyor.
+          */}
           <View style={s.actions}>
-            {(shown.actions ?? []).map((a) => (
-              <Button key={a.label} label={a.label} variant={a.variant ?? 'primary'} onPress={a.onPress} />
-            ))}
-            {shown.onDelete ? (
-              <Button label="Kaydı sil" variant="danger" onPress={shown.onDelete} />
-            ) : null}
-            <Button label="Kapat" variant="ghost" onPress={onClose} />
+            <ButtonRow>
+              {(shown.actions ?? []).map((a) => (
+                <Button key={a.label} label={a.label} variant={a.variant ?? 'primary'} onPress={a.onPress} />
+              ))}
+              {shown.onDelete ? (
+                <Button label="Kaydı sil" variant="danger" onPress={shown.onDelete} />
+              ) : null}
+              <Button label="Kapat" variant="ghost" onPress={onClose} />
+            </ButtonRow>
           </View>
         </ScrollView>
       </Animated.View>

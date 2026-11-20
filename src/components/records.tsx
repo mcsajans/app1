@@ -63,6 +63,18 @@ export function useElapsedSeconds(startedAt: string | null, extraSec = 0): numbe
   return Math.max(0, nowSec - startedSec) + extraSec;
 }
 
+/**
+ * Saniyeye yuvarlanmış "şimdi" (ms).
+ *
+ * Göreli zaman yazan ekranlar ("35 dk sonra", "2 saat önce") bunu kullanır:
+ * render gövdesinde `Date.now()` çağırmak React derleyicisinin saflık
+ * kuralına takılıyor ve hesap bir daha hiç tazelenmiyordu. Aynı saat
+ * kaynağına abone olunduğu için ekstra zamanlayıcı da açılmaz.
+ */
+export function useNowMs(): number {
+  return useSyncExternalStore(subscribeToClock, clockSnapshot, clockSnapshot) * 1000;
+}
+
 /** `01:23:45` ya da `23:45` — saat yoksa gösterilmez. */
 export function formatDuration(totalSec: number | null | undefined): string {
   const s = Math.max(0, Math.floor(totalSec ?? 0));

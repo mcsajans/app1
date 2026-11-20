@@ -39,6 +39,12 @@ export const moduleTint = {
    * diye yeşillerden uzak duruldu.
    */
   growth: '#D8D0EC',
+  /*
+   * İlaç: sıcak şeftali. Izgarada gelişimin menekşesi ve aşının nanesiyle
+   * komşu olduğu için ikisinden de uzak bir tonda; görevlerin kavununa
+   * (#F8E0C0) göre daha pembeye çalıyor ki yan yana düşerse ayrışsın.
+   */
+  medication: '#FBD9C8',
 } as const;
 
 export const colors = {

@@ -7,24 +7,20 @@ import { useBrandingStore } from '../core/branding/useBrandingStore';
 import { colors } from '../core/theme';
 
 /**
- * Yönetim panelinden yüklenen logoyu gösterir; henüz yüklenmemişse ya da
- * indirilemiyorsa yedek olarak emoji kullanılır — logo yokken ekran boş kalmaz.
+ * Uygulamanın kendi ikonu; pakete gömülü olduğu için ağ beklemeden çizilir.
+ * Uyarlanabilir ikonun ön katmanıyla aynı dosya: zemini saydam, kenar boşluğu
+ * uygulama içi kullanıma da uygun (`SplashBounce` de bunu kullanıyor).
  */
-export function BrandLogo({
-  slot,
-  size,
-  fallback = '',
-}: {
-  slot: 'project' | 'app';
-  size: number;
-  fallback?: string;
-}) {
-  const url = useBrandingStore((s) => (slot === 'project' ? s.projectLogo : s.appLogo));
-  const source = imageSource(url);
+const APP_ICON = require('../../assets/android-icon-foreground.png');
 
-  if (!source) {
-    return <Text style={{ fontSize: size * 0.82 }}>{fallback}</Text>;
-  }
+/**
+ * Yönetim panelinden yüklenen logoyu gösterir; henüz yüklenmemişse ya da
+ * indirilemiyorsa uygulamanın kendi ikonuna düşer — panelde logo tanımlı
+ * olmadığında (yeni kurulumlarda olağan) ekran boş kalmaz.
+ */
+export function BrandLogo({ slot, size }: { slot: 'project' | 'app'; size: number }) {
+  const url = useBrandingStore((s) => (slot === 'project' ? s.projectLogo : s.appLogo));
+  const source = imageSource(url) ?? APP_ICON;
 
   return (
     <Image

@@ -44,7 +44,6 @@ export default function LoginScreen({ onGoRegister }: { onGoRegister: () => void
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={s.hero}>
           <BrandLogo slot="project" size={96} />
-          <Text style={s.title}>Bebiqa</Text>
           <Text style={s.subtitle}>Devam etmek için hesabına giriş yap.</Text>
         </View>
 
@@ -113,8 +112,7 @@ export default function LoginScreen({ onGoRegister }: { onGoRegister: () => void
 }
 
 const s = StyleSheet.create({
-  hero: { alignItems: 'center', gap: 4, paddingVertical: spacing.xl },
-  title: { ...typography.h1, color: colors.text },
+  hero: { alignItems: 'center', gap: spacing.md, paddingVertical: spacing.xl },
   subtitle: { ...typography.small, color: colors.textSoft, textAlign: 'center' },
   actions: { marginTop: spacing.sm },
   linkRow: { flexDirection: 'row', justifyContent: 'center', paddingTop: spacing.sm },
